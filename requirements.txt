@@ -2,6 +2,7 @@ streamlit
 pandas
 apify-client
 requests
+gspread
 anthropic
 python-docx
 fpdf2
