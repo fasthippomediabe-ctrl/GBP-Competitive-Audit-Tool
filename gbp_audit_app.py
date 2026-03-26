@@ -1599,6 +1599,45 @@ def run_section_7(api_key, client_profile, comp_profiles, comp_labels, client_na
     return call_claude(api_key, system, user)
 
 
+# ---------------- PREVIOUS AUDITS (main area) ----------------
+
+if "audit_sections" not in st.session_state and not run_audit:
+    st.divider()
+    st.subheader("Previous Audits")
+    prev_audits = load_audit_history()
+    if prev_audits:
+        for i, audit in enumerate(prev_audits[:10]):
+            a_client = audit.get("Client", "?")
+            a_keyword = audit.get("Keyword", "?")
+            a_time = audit.get("Timestamp", "")[:16]
+            a_sections = audit.get("Sections", "?")
+            a_tab = audit.get("Tab Name", "")
+
+            with st.container():
+                col_info, col_btn = st.columns([5, 1])
+                with col_info:
+                    st.markdown(
+                        f"**{a_client}** — {a_keyword}  \n"
+                        f"<small style='color:#555'>{a_time} | {a_sections} sections</small>",
+                        unsafe_allow_html=True,
+                    )
+                with col_btn:
+                    if st.button("View", key=f"view_audit_{i}", use_container_width=True):
+                        if a_tab:
+                            loaded = load_audit_from_sheet(a_tab)
+                            if loaded:
+                                st.session_state["audit_sections"] = loaded["sections"]
+                                st.session_state["audit_data"] = {
+                                    "client_name": loaded["metadata"].get("client_name", ""),
+                                    "target_keyword": loaded["metadata"].get("target_keyword", ""),
+                                    "timestamp": loaded["metadata"].get("timestamp", ""),
+                                    "comp_labels": [],
+                                }
+                                st.rerun()
+    else:
+        st.caption("No previous audits found. Run your first audit above, or configure Google Sheets to save audit history.")
+
+
 # ---------------- MAIN AUDIT LOGIC ----------------
 
 if run_audit:
