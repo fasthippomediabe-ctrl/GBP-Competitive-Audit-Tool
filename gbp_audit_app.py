@@ -1048,30 +1048,11 @@ def find_top_competitors(keyword, client_name_to_exclude, location="", num_resul
         return [], str(e)
 
 
-# ---- Past Audits (sidebar) ----
+# ---- Past Audits count (sidebar) ----
 st.sidebar.divider()
-with st.sidebar.expander("**Past Audits**", expanded=False):
-    past_audits = load_audit_history()
-    if past_audits:
-        for i, audit in enumerate(past_audits[:5]):
-            label = f"{audit.get('Client', '?')} — {audit.get('Keyword', '?')} ({audit.get('Timestamp', '')[:10]})"
-            if st.button(label, key=f"load_audit_{i}", use_container_width=True):
-                tab_name = audit.get("Tab Name", "")
-                if tab_name:
-                    loaded = load_audit_from_sheet(tab_name)
-                    if loaded:
-                        st.session_state["audit_sections"] = loaded["sections"]
-                        st.session_state["audit_data"] = {
-                            "client_name": loaded["metadata"].get("client_name", ""),
-                            "target_keyword": loaded["metadata"].get("target_keyword", ""),
-                            "timestamp": loaded["metadata"].get("timestamp", ""),
-                            "comp_labels": [],
-                        }
-                        st.rerun()
-        if len(past_audits) > 5:
-            st.caption(f"+ {len(past_audits) - 5} more (see Previous Audits below)")
-    else:
-        st.caption("No past audits found")
+_sidebar_audits = load_audit_history()
+st.sidebar.markdown(f"**Past Audits:** {len(_sidebar_audits)} saved")
+st.sidebar.caption("Scroll down to search and view past audits")
 
 # ---------------- INPUT FORM ----------------
 
@@ -1630,39 +1611,59 @@ if "audit_sections" not in st.session_state and not run_audit:
     st.subheader("Previous Audits")
     prev_audits = load_audit_history()
     if prev_audits:
-        for i, audit in enumerate(prev_audits[:25]):
-            a_client = audit.get("Client", "?")
-            a_keyword = audit.get("Keyword", "?")
-            a_time = audit.get("Timestamp", "")[:16]
-            a_sections = audit.get("Sections", "?")
-            a_tab = audit.get("Tab Name", "")
+        # Search bar
+        audit_search = st.text_input(
+            "Search past audits",
+            placeholder="Search by client name, keyword, date...",
+            key="audit_search",
+        )
 
-            with st.container():
-                col_info, col_btn = st.columns([5, 1])
-                with col_info:
-                    st.markdown(
-                        f"**{a_client}** — {a_keyword}  \n"
-                        f"<small style='color:#555'>{a_time} | {a_sections} sections</small>",
-                        unsafe_allow_html=True,
-                    )
-                with col_btn:
-                    if st.button("View", key=f"view_audit_{i}", use_container_width=True):
-                        if a_tab:
-                            loaded = load_audit_from_sheet(a_tab)
-                            if loaded:
-                                st.session_state["audit_sections"] = loaded["sections"]
-                                st.session_state["audit_data"] = {
-                                    "client_name": loaded["metadata"].get("client_name", ""),
-                                    "target_keyword": loaded["metadata"].get("target_keyword", ""),
-                                    "timestamp": loaded["metadata"].get("timestamp", ""),
-                                    "comp_labels": [],
-                                }
-                                st.rerun()
+        # Filter audits based on search
+        if audit_search:
+            search_lower = audit_search.strip().lower()
+            filtered_audits = [
+                a for a in prev_audits
+                if search_lower in a.get("Client", "").lower()
+                or search_lower in a.get("Keyword", "").lower()
+                or search_lower in a.get("Timestamp", "").lower()
+            ]
+        else:
+            filtered_audits = prev_audits
+
+        if filtered_audits:
+            st.caption(f"Showing {len(filtered_audits)} of {len(prev_audits)} audits")
+            for i, audit in enumerate(filtered_audits):
+                a_client = audit.get("Client", "?")
+                a_keyword = audit.get("Keyword", "?")
+                a_time = audit.get("Timestamp", "")[:16]
+                a_sections = audit.get("Sections", "?")
+                a_tab = audit.get("Tab Name", "")
+
+                with st.container():
+                    col_info, col_btn = st.columns([5, 1])
+                    with col_info:
+                        st.markdown(
+                            f"**{a_client}** — {a_keyword}  \n"
+                            f"<small style='color:#555'>{a_time} | {a_sections} sections</small>",
+                            unsafe_allow_html=True,
+                        )
+                    with col_btn:
+                        if st.button("View", key=f"view_audit_{i}", use_container_width=True):
+                            if a_tab:
+                                loaded = load_audit_from_sheet(a_tab)
+                                if loaded:
+                                    st.session_state["audit_sections"] = loaded["sections"]
+                                    st.session_state["audit_data"] = {
+                                        "client_name": loaded["metadata"].get("client_name", ""),
+                                        "target_keyword": loaded["metadata"].get("target_keyword", ""),
+                                        "timestamp": loaded["metadata"].get("timestamp", ""),
+                                        "comp_labels": [],
+                                    }
+                                    st.rerun()
+        elif audit_search:
+            st.caption(f"No audits found matching \"{audit_search}\"")
     else:
-        st.caption("No previous audits found. Run your first audit above, or configure Google Sheets to save audit history.")
-
-    if prev_audits and len(prev_audits) > 25:
-        st.caption(f"Showing 25 of {len(prev_audits)} audits. View all in [Google Sheets](https://docs.google.com/spreadsheets/d/{AUDIT_SPREADSHEET_ID}/).")
+        st.caption("No previous audits found. Run your first audit above.")
 
 
 # ---------------- MAIN AUDIT LOGIC ----------------
