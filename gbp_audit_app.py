@@ -93,7 +93,7 @@ st.sidebar.markdown(
 
 # ---------------- CONFIG ----------------
 
-AUDIT_SPREADSHEET_ID = "1oksMAwVZNeuf1EIRYz9EXoli9C1pkUF4KYrunRoZQ7A"
+AUDIT_SPREADSHEET_ID = "14WqY0En1CuLXRO5fvcy6WKzL_KYWxYV6pUf-FdaHqvU"
 
 APIFY_ACTORS = {
     "gbp_profile": "compass/crawler-google-places",
