@@ -2040,6 +2040,13 @@ if run_audit:
 # ---------------- DISPLAY RESULTS ----------------
 
 if "audit_sections" in st.session_state:
+    # Auto-scroll to top when viewing a report
+    st.markdown('<div id="audit-top"></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<script>document.getElementById("audit-top").scrollIntoView();</script>',
+        unsafe_allow_html=True,
+    )
+
     sections = st.session_state["audit_sections"]
     audit_data = st.session_state.get("audit_data", {})
 
