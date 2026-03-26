@@ -41,11 +41,15 @@ import os
 import re
 import json
 import time
+import tempfile
 import pandas as pd
+import requests as req
 from io import BytesIO
 from datetime import datetime
 from apify_client import ApifyClient
 import gspread
+
+LOGO_URL = "https://fasthippomedia.com/wp-content/uploads/2024/12/SVG-File.png"
 
 try:
     import anthropic
@@ -314,6 +318,20 @@ def load_audit_from_sheet(tab_name):
         return None
 
 
+# ---------------- LOGO HELPER ----------------
+
+@st.cache_data(ttl=3600)
+def _download_logo():
+    """Download the Fast Hippo Media logo and cache it."""
+    try:
+        r = req.get(LOGO_URL, timeout=10)
+        if r.status_code == 200:
+            return r.content
+    except Exception:
+        pass
+    return None
+
+
 # ---------------- BRAND COLORS ----------------
 # Fast Hippo Media brand palette
 BRAND_NAVY = RGBColor(0x03, 0x04, 0x5E) if HAS_DOCX else None       # #03045E
@@ -347,18 +365,26 @@ def generate_docx(audit_data, sections):
     style.font.color.rgb = BRAND_DARK_TEXT
 
     # ---- COVER PAGE ----
-    # Add spacing before title
-    spacer = doc.add_paragraph()
-    spacer.paragraph_format.space_before = Pt(80)
-
-    # Company branding
-    branding = doc.add_paragraph()
-    branding.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = branding.add_run("FAST HIPPO MEDIA")
-    run.font.size = Pt(14)
-    run.font.color.rgb = BRAND_BLUE
-    run.bold = True
-    run.font.name = "Calibri"
+    # Add logo
+    logo_data = _download_logo()
+    if logo_data:
+        logo_stream = BytesIO(logo_data)
+        logo_para = doc.add_paragraph()
+        logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        logo_para.paragraph_format.space_before = Pt(40)
+        run = logo_para.add_run()
+        run.add_picture(logo_stream, width=Inches(3))
+    else:
+        # Fallback text if logo can't be downloaded
+        spacer = doc.add_paragraph()
+        spacer.paragraph_format.space_before = Pt(80)
+        branding = doc.add_paragraph()
+        branding.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = branding.add_run("FAST HIPPO MEDIA")
+        run.font.size = Pt(14)
+        run.font.color.rgb = BRAND_BLUE
+        run.bold = True
+        run.font.name = "Calibri"
 
     # Title
     title = doc.add_heading("GBP Competitor's Audit Report", level=0)
@@ -557,19 +583,62 @@ def _add_table_to_doc(doc, headers, rows):
                         run.font.name = "Calibri"
 
 
+def _add_hyperlink(paragraph, url, text=None):
+    """Add a clickable hyperlink to a paragraph."""
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    display_text = text or url
+    part = paragraph.part
+    r_id = part.relate_to(url, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", is_external=True)
+
+    hyperlink = OxmlElement("w:hyperlink")
+    hyperlink.set(qn("r:id"), r_id)
+
+    new_run = OxmlElement("w:r")
+    rPr = OxmlElement("w:rPr")
+
+    color = OxmlElement("w:color")
+    color.set(qn("w:val"), "0C34CA")
+    rPr.append(color)
+
+    u = OxmlElement("w:u")
+    u.set(qn("w:val"), "single")
+    rPr.append(u)
+
+    sz = OxmlElement("w:sz")
+    sz.set(qn("w:val"), "20")
+    rPr.append(sz)
+
+    new_run.append(rPr)
+    new_run.text = display_text
+    hyperlink.append(new_run)
+    paragraph._p.append(hyperlink)
+
+
 def _add_formatted_text(paragraph, text):
-    """Add text with basic markdown bold/italic formatting to a paragraph."""
-    parts = re.split(r'(\*\*.*?\*\*|\*.*?\*)', text)
-    for part in parts:
-        if part.startswith("**") and part.endswith("**"):
-            run = paragraph.add_run(part[2:-2])
-            run.bold = True
-            run.font.color.rgb = BRAND_NAVY
-        elif part.startswith("*") and part.endswith("*"):
-            run = paragraph.add_run(part[1:-1])
-            run.italic = True
+    """Add text with markdown bold/italic formatting and clickable URLs."""
+    # First split by URLs
+    url_pattern = r'(https?://[^\s\)]+)'
+    url_parts = re.split(url_pattern, text)
+
+    for url_part in url_parts:
+        if re.match(r'^https?://', url_part):
+            # This is a URL - make it clickable
+            _add_hyperlink(paragraph, url_part.rstrip(".,;:"))
         else:
-            paragraph.add_run(part)
+            # Process bold/italic within non-URL text
+            parts = re.split(r'(\*\*.*?\*\*|\*.*?\*)', url_part)
+            for part in parts:
+                if part.startswith("**") and part.endswith("**"):
+                    run = paragraph.add_run(part[2:-2])
+                    run.bold = True
+                    run.font.color.rgb = BRAND_NAVY
+                elif part.startswith("*") and part.endswith("*"):
+                    run = paragraph.add_run(part[1:-1])
+                    run.italic = True
+                else:
+                    paragraph.add_run(part)
 
 
 # ---------------- PDF EXPORT ----------------
@@ -626,14 +695,32 @@ def generate_pdf(audit_data, sections):
 
     # Navy header bar
     pdf.set_fill_color(*NAVY)
-    pdf.rect(0, 0, 210, 45, "F")
+    pdf.rect(0, 0, 210, 50, "F")
 
-    # Company name in header
-    pdf.set_font("Helvetica", "B", 18)
-    pdf.set_text_color(*WHITE)
-    pdf.set_y(12)
-    pdf.cell(0, 10, "FAST HIPPO MEDIA", ln=True, align="C")
+    # Try to add logo in header
+    logo_data = _download_logo()
+    if logo_data:
+        logo_tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        logo_tmp.write(logo_data)
+        logo_tmp.close()
+        try:
+            pdf.image(logo_tmp.name, x=55, y=8, w=100)
+        except Exception:
+            pass
+        try:
+            os.unlink(logo_tmp.name)
+        except Exception:
+            pass
+    else:
+        # Fallback text
+        pdf.set_font("Helvetica", "B", 18)
+        pdf.set_text_color(*WHITE)
+        pdf.set_y(12)
+        pdf.cell(0, 10, "FAST HIPPO MEDIA", ln=True, align="C")
+
     pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(*WHITE)
+    pdf.set_y(38)
     pdf.cell(0, 6, "fasthippomedia.com", ln=True, align="C")
 
     # Report title
@@ -1471,17 +1558,27 @@ if run_audit:
 
     apify = ApifyClient(apify_token)
 
+    # Proper capitalization for client name
+    client_name = client_name.strip().title()
+
     # All URLs to scrape
     all_gbp_urls = [client_gbp_url] + competitor_urls
-    comp_labels = [f"Competitor {i + 1}" for i in range(len(competitor_urls))]
 
     # Website URLs
     all_website_urls = [client_website]
-    # Try to get competitor websites from their profiles later
 
     # ---- PHASE 1: SCRAPING ----
     st.header("Phase 1: Data Collection")
     scrape_status = st.container()
+
+    # Stop button
+    if "audit_stopped" not in st.session_state:
+        st.session_state["audit_stopped"] = False
+    stop_col1, stop_col2 = st.columns([4, 1])
+    with stop_col2:
+        if st.button("Stop Audit", type="secondary", use_container_width=True):
+            st.session_state["audit_stopped"] = True
+            st.warning("Stopping after current step...")
 
     with st.spinner("Scraping GBP profiles..."):
         scrape_status.subheader("Scraping GBP Profiles")
@@ -1490,6 +1587,19 @@ if run_audit:
         comp_profiles = all_profiles[1:]
         scrape_status.success(f"Profiles scraped: {sum(1 for p in all_profiles if p)}/{len(all_profiles)}")
 
+    # Use actual business names from scraped profiles as competitor labels
+    comp_labels = []
+    for i, prof in enumerate(comp_profiles):
+        if prof and prof.get("title"):
+            comp_labels.append(prof["title"])
+        else:
+            comp_labels.append(f"Competitor {i + 1}")
+
+    if st.session_state.get("audit_stopped"):
+        st.warning("Audit stopped by user after profile scraping.")
+        st.session_state["audit_stopped"] = False
+        st.stop()
+
     with st.spinner("Scraping reviews..."):
         scrape_status.subheader("Scraping Reviews")
         all_reviews = scrape_reviews(apify, all_gbp_urls, max_reviews, scrape_status)
@@ -1497,6 +1607,11 @@ if run_audit:
         comp_reviews = all_reviews[1:]
         total_reviews = sum(len(r) for r in all_reviews)
         scrape_status.success(f"Total reviews scraped: {total_reviews}")
+
+    if st.session_state.get("audit_stopped"):
+        st.warning("Audit stopped by user after review scraping.")
+        st.session_state["audit_stopped"] = False
+        st.stop()
 
     # Scrape websites
     client_website_content = ""
@@ -1521,6 +1636,11 @@ if run_audit:
                 client_website_content = all_website_content[0] if all_website_content else ""
                 comp_website_contents = all_website_content[1:] if len(all_website_content) > 1 else [""] * len(competitor_urls)
                 scrape_status.success("Website content scraped")
+
+    if st.session_state.get("audit_stopped"):
+        st.warning("Audit stopped by user after website scraping.")
+        st.session_state["audit_stopped"] = False
+        st.stop()
 
     # Save raw data to session state
     st.session_state["audit_data"] = {
@@ -1568,6 +1688,10 @@ if run_audit:
     ]
 
     for section_name, runner in section_runners:
+        if st.session_state.get("audit_stopped"):
+            st.warning(f"Audit stopped by user. Completed {len(sections)} of {len(section_runners)} sections.")
+            st.session_state["audit_stopped"] = False
+            break
         with st.spinner(f"Analyzing: {section_name}..."):
             analysis_status.write(f"Running: {section_name}")
             result = runner()
