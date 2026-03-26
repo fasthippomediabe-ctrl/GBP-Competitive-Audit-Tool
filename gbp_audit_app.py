@@ -1062,6 +1062,8 @@ with col1:
 with col2:
     client_website = st.text_input("Client Website", placeholder="https://www.smithplumbing.com")
     target_keyword = st.text_input("Target Keyword / Service", placeholder="e.g. plumber in Austin TX")
+    if target_keyword and ("," in target_keyword or "\n" in target_keyword):
+        st.warning("Only one keyword per audit. Run separate audits for each keyword.")
 
 st.subheader("Competitor GBP URLs")
 
