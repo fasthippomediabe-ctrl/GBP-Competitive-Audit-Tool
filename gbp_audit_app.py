@@ -88,14 +88,73 @@ st.sidebar.markdown("[Check Claude AI Billing](https://console.anthropic.com/set
 st.sidebar.markdown("[View Audit History (Google Sheets)](https://docs.google.com/spreadsheets/d/14WqY0En1CuLXRO5fvcy6WKzL_KYWxYV6pUf-FdaHqvU/)")
 
 st.sidebar.divider()
-st.sidebar.markdown("**How to use:**")
-st.sidebar.markdown(
-    "1. Enter your client's info and up to 3 competitor GBP URLs\n"
-    "2. Click **Run Audit**\n"
-    "3. Apify scrapes all profiles, reviews, and photos\n"
-    "4. Claude AI analyzes the data across 7 sections\n"
-    "5. Download report as PDF, Word, or Markdown"
-)
+
+# Downloadable instructions
+instructions_text = """GBP COMPETITIVE AUDIT TOOL - User Guide
+========================================
+
+STEP 1: Enter Client Information
+- Client Business Name (required)
+- Client GBP URL - Google Maps link (required)
+- Client Website (optional but recommended)
+- Target Keyword / Service (e.g. "plumber in Austin TX")
+
+STEP 2: Find Competitors
+- Enter a location (e.g. "Plano, Texas")
+- Choose search area: City only, Metro area, or Entire state
+- Click "Find Top Competitors" to auto-fill from Google Maps rankings
+- OR paste competitor GBP URLs manually
+- You can select/deselect competitors from the results list
+
+STEP 3: Configure Scraping Options
+- Max reviews per business (default: 100)
+- Max photos per business (default: 20)
+- Website scraping on/off (scrapes services, about pages, etc.)
+- Max pages to crawl per website (default: 5)
+
+STEP 4: Run the Audit
+- Click "Run Audit" to start
+- Phase 1: Apify scrapes all GBP profiles, reviews, photos, and websites
+- Phase 2: Claude AI analyzes the data across 7 sections
+
+AUDIT SECTIONS:
+1. Client vs Competitor Overview - comparison table
+2. Top 7 Ranking Levers - evidence-based ranking factors
+3. GBP Product Instructions - step-by-step product setup
+4. Competitor Patterns - observations only, no advice
+5. Outlier Analysis - anomalies only, no advice
+6. Review Framework - review acquisition & response strategy
+7. Photo Upload Plan - weekly photo cadence & types
+
+STEP 5: Download & Save
+- Reports auto-save to Google Sheets
+- Download as PDF, Word (DOCX), Markdown, or Raw JSON
+- View past audits from the sidebar
+
+TIPS:
+- Each audit uses Apify credits (scraping) + Anthropic credits (AI analysis)
+- A full audit costs roughly $0.05-0.15 in Claude API credits
+- Reduce max reviews/photos to save Apify credits on test runs
+- Past audits can be reloaded from the sidebar without re-scraping
+"""
+
+with st.sidebar.expander("**How to use**", expanded=False):
+    st.markdown(
+        "1. Enter client info + target keyword\n"
+        "2. Click **Find Top Competitors** or paste URLs\n"
+        "3. Click **Run Audit**\n"
+        "4. Apify scrapes profiles, reviews, photos & websites\n"
+        "5. Claude AI analyzes across 7 sections\n"
+        "6. Download as PDF, Word, or Markdown\n"
+        "7. Auto-saved to Google Sheets"
+    )
+    st.download_button(
+        "📄 Download Full Instructions",
+        instructions_text.encode("utf-8"),
+        "GBP_Audit_Tool_Instructions.txt",
+        "text/plain",
+        use_container_width=True,
+    )
 
 # ---------------- CONFIG ----------------
 
