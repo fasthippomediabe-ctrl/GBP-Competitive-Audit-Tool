@@ -1349,8 +1349,8 @@ with opt_col2:
     scrape_websites = st.checkbox("Scrape business websites for services/content", True)
     max_website_pages = st.number_input("Max pages to crawl per website", 1, 20, 5)
 
-st.caption("Each audit uses Apify + Claude API credits (~$0.10-0.20 per run). Double-check your inputs before running.")
 run_audit = st.button("🚀 Run Audit", type="primary", use_container_width=True)
+st.caption("Each audit uses Apify + Claude API credits (~$0.10-0.20 per run). Double-check your inputs before running.")
 
 
 # ---------------- SCRAPING FUNCTIONS ----------------
