@@ -314,42 +314,120 @@ def load_audit_from_sheet(tab_name):
         return None
 
 
+# ---------------- BRAND COLORS ----------------
+# Fast Hippo Media brand palette
+BRAND_NAVY = RGBColor(0x03, 0x04, 0x5E) if HAS_DOCX else None       # #03045E
+BRAND_BLUE = RGBColor(0x0C, 0x34, 0xCA) if HAS_DOCX else None       # #0C34CA
+BRAND_DARK_TEXT = RGBColor(0x2D, 0x2D, 0x2D) if HAS_DOCX else None  # #2D2D2D
+BRAND_GRAY = RGBColor(0x55, 0x55, 0x55) if HAS_DOCX else None       # #555555
+BRAND_WHITE = RGBColor(0xFF, 0xFF, 0xFF) if HAS_DOCX else None      # #FFFFFF
+
+
 # ---------------- DOCX EXPORT ----------------
 
+def _style_heading(heading, color, size=None):
+    """Apply brand color to a heading."""
+    for run in heading.runs:
+        run.font.color.rgb = color
+        if size:
+            run.font.size = size
+
+
 def generate_docx(audit_data, sections):
-    """Generate a formatted Word document from audit results."""
+    """Generate a branded Word document from audit results."""
     if not HAS_DOCX:
         return None
 
     doc = Document()
 
+    # Set default font
+    style = doc.styles["Normal"]
+    style.font.name = "Calibri"
+    style.font.size = Pt(11)
+    style.font.color.rgb = BRAND_DARK_TEXT
+
+    # ---- COVER PAGE ----
+    # Add spacing before title
+    spacer = doc.add_paragraph()
+    spacer.paragraph_format.space_before = Pt(80)
+
+    # Company branding
+    branding = doc.add_paragraph()
+    branding.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = branding.add_run("FAST HIPPO MEDIA")
+    run.font.size = Pt(14)
+    run.font.color.rgb = BRAND_BLUE
+    run.bold = True
+    run.font.name = "Calibri"
+
     # Title
     title = doc.add_heading("GBP Competitor's Audit Report", level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _style_heading(title, BRAND_NAVY, Pt(28))
+
+    # Divider line
+    divider = doc.add_paragraph()
+    divider.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = divider.add_run("_" * 50)
+    run.font.color.rgb = BRAND_BLUE
+    run.font.size = Pt(8)
 
     # Metadata
-    meta_para = doc.add_paragraph()
-    meta_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     client_name = audit_data.get("client_name", "Client")
     keyword = audit_data.get("target_keyword", "")
     timestamp = audit_data.get("timestamp", "")
-    meta_para.add_run(f"Client: {client_name}\n").bold = True
-    meta_para.add_run(f"Target Keyword: {keyword}\n")
-    meta_para.add_run(f"Generated: {timestamp}\n")
-    meta_para.add_run(f"Competitors: {', '.join(audit_data.get('comp_labels', []))}")
+    competitors = ", ".join(audit_data.get("comp_labels", []))
+
+    meta_items = [
+        ("Client", client_name),
+        ("Target Keyword", keyword),
+        ("Generated", timestamp),
+        ("Competitors", competitors),
+    ]
+    for label, value in meta_items:
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_after = Pt(2)
+        run_label = p.add_run(f"{label}: ")
+        run_label.font.color.rgb = BRAND_GRAY
+        run_label.font.size = Pt(11)
+        run_label.font.name = "Calibri"
+        run_value = p.add_run(value)
+        run_value.font.color.rgb = BRAND_NAVY
+        run_value.font.size = Pt(11)
+        run_value.bold = True
+        run_value.font.name = "Calibri"
 
     doc.add_page_break()
 
-    # Table of Contents
-    doc.add_heading("Table of Contents", level=1)
+    # ---- TABLE OF CONTENTS ----
+    toc_heading = doc.add_heading("Table of Contents", level=1)
+    _style_heading(toc_heading, BRAND_NAVY)
+
     for i, section_name in enumerate(sections.keys(), 1):
-        doc.add_paragraph(f"{section_name}", style="List Number")
+        p = doc.add_paragraph()
+        p.paragraph_format.space_after = Pt(4)
+        run_num = p.add_run(f"{i}. ")
+        run_num.font.color.rgb = BRAND_BLUE
+        run_num.bold = True
+        run_num.font.size = Pt(12)
+        run_name = p.add_run(section_name.split(". ", 1)[-1] if ". " in section_name else section_name)
+        run_name.font.color.rgb = BRAND_DARK_TEXT
+        run_name.font.size = Pt(12)
 
     doc.add_page_break()
 
-    # Sections
+    # ---- SECTIONS ----
     for section_name, content in sections.items():
-        doc.add_heading(section_name, level=1)
+        heading = doc.add_heading(section_name, level=1)
+        _style_heading(heading, BRAND_NAVY)
+
+        # Add a colored underline after each section heading
+        underline = doc.add_paragraph()
+        underline.paragraph_format.space_after = Pt(8)
+        run = underline.add_run("_" * 60)
+        run.font.color.rgb = BRAND_BLUE
+        run.font.size = Pt(6)
 
         if content.startswith("ERROR"):
             p = doc.add_paragraph(content)
@@ -365,10 +443,8 @@ def generate_docx(audit_data, sections):
         for line in lines:
             stripped = line.strip()
 
-            # Skip empty lines
             if not stripped:
                 if in_table and table_rows:
-                    # End of table, render it
                     _add_table_to_doc(doc, table_header, table_rows)
                     in_table = False
                     table_rows = []
@@ -378,7 +454,6 @@ def generate_docx(audit_data, sections):
             # Detect markdown table rows
             if "|" in stripped and stripped.startswith("|"):
                 cells = [c.strip() for c in stripped.split("|")[1:-1]]
-                # Skip separator rows (---|---|---)
                 if all(re.match(r'^[-:]+$', c) for c in cells if c):
                     continue
                 if not in_table:
@@ -388,42 +463,47 @@ def generate_docx(audit_data, sections):
                     table_rows.append(cells)
                 continue
 
-            # If we were in a table, flush it
             if in_table and table_rows:
                 _add_table_to_doc(doc, table_header, table_rows)
                 in_table = False
                 table_rows = []
                 table_header = []
 
-            # Headings
+            # Headings with brand colors
             if stripped.startswith("### "):
-                doc.add_heading(stripped[4:], level=3)
+                h = doc.add_heading(stripped[4:], level=3)
+                _style_heading(h, BRAND_BLUE)
             elif stripped.startswith("## "):
-                doc.add_heading(stripped[3:], level=2)
+                h = doc.add_heading(stripped[3:], level=2)
+                _style_heading(h, BRAND_NAVY)
             elif stripped.startswith("# "):
-                doc.add_heading(stripped[2:], level=1)
-            # Bullet points
+                h = doc.add_heading(stripped[2:], level=1)
+                _style_heading(h, BRAND_NAVY)
             elif stripped.startswith("- ") or stripped.startswith("* "):
                 text = stripped[2:]
                 p = doc.add_paragraph(style="List Bullet")
                 _add_formatted_text(p, text)
-            # Numbered lists
             elif re.match(r'^\d+\.\s', stripped):
                 text = re.sub(r'^\d+\.\s', '', stripped)
                 p = doc.add_paragraph(style="List Number")
                 _add_formatted_text(p, text)
-            # Regular paragraph
             else:
                 p = doc.add_paragraph()
                 _add_formatted_text(p, stripped)
 
-        # Flush any remaining table
         if in_table and table_rows:
             _add_table_to_doc(doc, table_header, table_rows)
 
         doc.add_page_break()
 
-    # Save to buffer
+    # ---- FOOTER / BRANDING ----
+    footer_para = doc.add_paragraph()
+    footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = footer_para.add_run("Prepared by Fast Hippo Media | fasthippomedia.com")
+    run.font.color.rgb = BRAND_GRAY
+    run.font.size = Pt(9)
+    run.italic = True
+
     buffer = BytesIO()
     doc.save(buffer)
     buffer.seek(0)
@@ -431,42 +511,60 @@ def generate_docx(audit_data, sections):
 
 
 def _add_table_to_doc(doc, headers, rows):
-    """Add a formatted table to the Word document."""
+    """Add a branded table to the Word document."""
     if not headers:
         return
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
     num_cols = len(headers)
     table = doc.add_table(rows=1 + len(rows), cols=num_cols)
-    table.style = "Light Grid Accent 1"
+    table.style = "Table Grid"
 
-    # Header row
+    # Style header row with brand navy background
     for i, header in enumerate(headers):
         cell = table.rows[0].cells[i] if i < num_cols else None
         if cell:
+            # Set background color
+            shading = OxmlElement("w:shd")
+            shading.set(qn("w:fill"), "03045E")
+            cell._tc.get_or_add_tcPr().append(shading)
+
             cell.text = header
             for paragraph in cell.paragraphs:
                 for run in paragraph.runs:
                     run.bold = True
                     run.font.size = Pt(9)
+                    run.font.color.rgb = BRAND_WHITE
+                    run.font.name = "Calibri"
 
-    # Data rows
+    # Style data rows with alternating colors
     for r_idx, row_data in enumerate(rows):
         for c_idx, cell_text in enumerate(row_data):
             if c_idx < num_cols:
                 cell = table.rows[r_idx + 1].cells[c_idx]
+                # Alternating row background
+                if r_idx % 2 == 0:
+                    shading = OxmlElement("w:shd")
+                    shading.set(qn("w:fill"), "F0F4FF")
+                    cell._tc.get_or_add_tcPr().append(shading)
+
                 cell.text = cell_text
                 for paragraph in cell.paragraphs:
                     for run in paragraph.runs:
                         run.font.size = Pt(9)
+                        run.font.color.rgb = BRAND_DARK_TEXT
+                        run.font.name = "Calibri"
 
 
 def _add_formatted_text(paragraph, text):
     """Add text with basic markdown bold/italic formatting to a paragraph."""
-    # Handle **bold** and *italic*
     parts = re.split(r'(\*\*.*?\*\*|\*.*?\*)', text)
     for part in parts:
         if part.startswith("**") and part.endswith("**"):
             run = paragraph.add_run(part[2:-2])
             run.bold = True
+            run.font.color.rgb = BRAND_NAVY
         elif part.startswith("*") and part.endswith("*"):
             run = paragraph.add_run(part[1:-1])
             run.italic = True
@@ -509,48 +607,101 @@ def _sanitize_pdf_text(text):
 
 
 def generate_pdf(audit_data, sections):
-    """Generate a PDF report from audit results."""
+    """Generate a branded PDF report with Fast Hippo Media colors."""
     if not HAS_FPDF:
         return None
+
+    # Brand colors (RGB)
+    NAVY = (3, 4, 94)       # #03045E
+    BLUE = (12, 52, 202)    # #0C34CA
+    DARK = (45, 45, 45)     # #2D2D2D
+    GRAY = (85, 85, 85)     # #555555
+    WHITE = (255, 255, 255)
 
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=20)
 
-    # Cover page
+    # ---- COVER PAGE ----
     pdf.add_page()
-    pdf.set_font("Helvetica", "B", 24)
-    pdf.cell(0, 60, "", ln=True)
-    pdf.cell(0, 15, "GBP Competitor's Audit Report", ln=True, align="C")
-    pdf.set_font("Helvetica", "", 14)
-    pdf.cell(0, 10, "", ln=True)
+
+    # Navy header bar
+    pdf.set_fill_color(*NAVY)
+    pdf.rect(0, 0, 210, 45, "F")
+
+    # Company name in header
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_text_color(*WHITE)
+    pdf.set_y(12)
+    pdf.cell(0, 10, "FAST HIPPO MEDIA", ln=True, align="C")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, "fasthippomedia.com", ln=True, align="C")
+
+    # Report title
+    pdf.set_y(70)
+    pdf.set_font("Helvetica", "B", 28)
+    pdf.set_text_color(*NAVY)
+    pdf.cell(0, 15, "GBP Competitor's", ln=True, align="C")
+    pdf.cell(0, 15, "Audit Report", ln=True, align="C")
+
+    # Blue accent line
+    pdf.set_draw_color(*BLUE)
+    pdf.set_line_width(1)
+    pdf.line(60, pdf.get_y() + 5, 150, pdf.get_y() + 5)
+
+    # Metadata
+    pdf.set_y(pdf.get_y() + 15)
+    pdf.set_font("Helvetica", "", 12)
 
     client_name = audit_data.get("client_name", "Client")
     keyword = audit_data.get("target_keyword", "")
     timestamp = audit_data.get("timestamp", "")
+    competitors = ", ".join(audit_data.get("comp_labels", []))
 
-    pdf.cell(0, 10, _sanitize_pdf_text(f"Client: {client_name}"), ln=True, align="C")
-    pdf.cell(0, 8, _sanitize_pdf_text(f"Keyword: {keyword}"), ln=True, align="C")
-    pdf.cell(0, 8, _sanitize_pdf_text(f"Generated: {timestamp}"), ln=True, align="C")
-    pdf.cell(0, 8, _sanitize_pdf_text(f"Competitors: {', '.join(audit_data.get('comp_labels', []))}"), ln=True, align="C")
+    meta_items = [
+        ("Client", client_name),
+        ("Target Keyword", keyword),
+        ("Generated", timestamp),
+        ("Competitors", competitors),
+    ]
+    for label, value in meta_items:
+        pdf.set_text_color(*GRAY)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(55, 8, _sanitize_pdf_text(f"{label}:"), align="R")
+        pdf.set_text_color(*NAVY)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 8, _sanitize_pdf_text(f"  {value}"), ln=True)
 
-    # Sections
+    # Footer on cover
+    pdf.set_y(260)
+    pdf.set_font("Helvetica", "I", 9)
+    pdf.set_text_color(*GRAY)
+    pdf.cell(0, 6, "Confidential - Prepared exclusively for client use", ln=True, align="C")
+
+    # ---- SECTION PAGES ----
     for section_name, content in sections.items():
         pdf.add_page()
 
-        # Section title
-        pdf.set_font("Helvetica", "B", 16)
-        pdf.cell(0, 12, _sanitize_pdf_text(section_name), ln=True)
-        pdf.cell(0, 3, "", ln=True)
+        # Section header bar
+        pdf.set_fill_color(*NAVY)
+        pdf.rect(0, 0, 210, 20, "F")
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.set_text_color(*WHITE)
+        pdf.set_y(5)
+        pdf.cell(0, 10, _sanitize_pdf_text(section_name), ln=True, align="C")
+
+        # Reset position below header
+        pdf.set_y(28)
+        pdf.set_text_color(*DARK)
 
         if content.startswith("ERROR"):
             pdf.set_font("Helvetica", "", 11)
             pdf.set_text_color(255, 0, 0)
             pdf.multi_cell(0, 6, _sanitize_pdf_text(content))
-            pdf.set_text_color(0, 0, 0)
             continue
 
-        # Parse content line by line
+        # Parse content
         lines = content.split("\n")
+        in_table_header = True
         for line in lines:
             stripped = line.strip()
 
@@ -560,47 +711,85 @@ def generate_pdf(audit_data, sections):
 
             # Table separator - skip
             if re.match(r'^[\|\s\-:]+$', stripped) and "|" in stripped:
+                in_table_header = False
                 continue
 
             # Table row
             if stripped.startswith("|") and stripped.endswith("|"):
                 cells = [c.strip() for c in stripped.split("|")[1:-1]]
-                pdf.set_font("Helvetica", "", 8)
-                # Simple table rendering
-                col_width = (pdf.w - 40) / max(len(cells), 1)
-                for cell_text in cells:
-                    # Truncate long cells
-                    display = cell_text[:60] + "..." if len(cell_text) > 60 else cell_text
-                    pdf.cell(col_width, 6, _sanitize_pdf_text(display), border=1)
-                pdf.ln()
+                col_width = (pdf.w - 30) / max(len(cells), 1)
+
+                if in_table_header:
+                    # Header row - navy background
+                    pdf.set_font("Helvetica", "B", 8)
+                    pdf.set_fill_color(*NAVY)
+                    pdf.set_text_color(*WHITE)
+                    for cell_text in cells:
+                        display = cell_text[:55] + "..." if len(cell_text) > 55 else cell_text
+                        pdf.cell(col_width, 7, _sanitize_pdf_text(display), border=1, fill=True)
+                    pdf.ln()
+                    in_table_header = False
+                else:
+                    # Data row
+                    pdf.set_font("Helvetica", "", 8)
+                    pdf.set_text_color(*DARK)
+                    for cell_text in cells:
+                        display = cell_text[:55] + "..." if len(cell_text) > 55 else cell_text
+                        pdf.cell(col_width, 6, _sanitize_pdf_text(display), border=1)
+                    pdf.ln()
                 continue
+
+            in_table_header = True  # Reset for next table
 
             # Headings
             if stripped.startswith("### "):
-                pdf.set_font("Helvetica", "B", 12)
+                pdf.set_font("Helvetica", "B", 11)
+                pdf.set_text_color(*BLUE)
                 pdf.cell(0, 8, _sanitize_pdf_text(stripped[4:]), ln=True)
+                pdf.set_text_color(*DARK)
             elif stripped.startswith("## "):
                 pdf.set_font("Helvetica", "B", 13)
+                pdf.set_text_color(*NAVY)
                 pdf.cell(0, 9, _sanitize_pdf_text(stripped[3:]), ln=True)
+                pdf.set_text_color(*DARK)
             elif stripped.startswith("# "):
                 pdf.set_font("Helvetica", "B", 14)
+                pdf.set_text_color(*NAVY)
                 pdf.cell(0, 10, _sanitize_pdf_text(stripped[2:]), ln=True)
+                pdf.set_text_color(*DARK)
             # Bullets
             elif stripped.startswith("- ") or stripped.startswith("* "):
                 pdf.set_font("Helvetica", "", 10)
-                text = stripped[2:]
-                text = text.replace("**", "")
+                pdf.set_text_color(*DARK)
+                text = stripped[2:].replace("**", "")
                 pdf.multi_cell(0, 6, _sanitize_pdf_text(f"  - {text}"))
             # Numbered items
             elif re.match(r'^\d+\.\s', stripped):
                 pdf.set_font("Helvetica", "", 10)
+                pdf.set_text_color(*DARK)
                 text = stripped.replace("**", "")
                 pdf.multi_cell(0, 6, _sanitize_pdf_text(text))
             # Regular text
             else:
                 pdf.set_font("Helvetica", "", 10)
+                pdf.set_text_color(*DARK)
                 text = stripped.replace("**", "")
                 pdf.multi_cell(0, 6, _sanitize_pdf_text(text))
+
+    # ---- BACK PAGE ----
+    pdf.add_page()
+    pdf.set_fill_color(*NAVY)
+    pdf.rect(0, 0, 210, 297, "F")
+    pdf.set_y(120)
+    pdf.set_font("Helvetica", "B", 20)
+    pdf.set_text_color(*WHITE)
+    pdf.cell(0, 12, "FAST HIPPO MEDIA", ln=True, align="C")
+    pdf.set_font("Helvetica", "", 12)
+    pdf.cell(0, 8, "fasthippomedia.com", ln=True, align="C")
+    pdf.cell(0, 15, "", ln=True)
+    pdf.set_font("Helvetica", "I", 10)
+    pdf.set_text_color(145, 170, 239)  # Light periwinkle
+    pdf.cell(0, 8, "Helping businesses dominate local search", ln=True, align="C")
 
     # Output
     buffer = BytesIO()
