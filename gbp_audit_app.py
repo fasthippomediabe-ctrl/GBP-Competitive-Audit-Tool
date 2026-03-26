@@ -130,6 +130,75 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ---------------- AUDIT REMINDERS ----------------
+
+def _check_audit_reminders():
+    """Check if any clients are due for monthly or quarterly audits."""
+    audits = load_audit_history()
+    if not audits:
+        return []
+
+    reminders = []
+    now = datetime.now()
+
+    # Group audits by client
+    client_latest = {}
+    for a in audits:
+        client = a.get("Client", "").strip()
+        keyword = a.get("Keyword", "").strip()
+        timestamp_str = a.get("Timestamp", "")
+        if not client or not timestamp_str:
+            continue
+
+        key = f"{client}|{keyword}"
+        try:
+            audit_date = datetime.strptime(timestamp_str[:19], "%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            continue
+
+        if key not in client_latest or audit_date > client_latest[key]["date"]:
+            client_latest[key] = {"client": client, "keyword": keyword, "date": audit_date}
+
+    for key, info in client_latest.items():
+        days_ago = (now - info["date"]).days
+
+        if days_ago >= 90:
+            reminders.append({
+                "type": "quarterly",
+                "client": info["client"],
+                "keyword": info["keyword"],
+                "days": days_ago,
+                "last_date": info["date"].strftime("%Y-%m-%d"),
+            })
+        elif days_ago >= 30:
+            reminders.append({
+                "type": "monthly",
+                "client": info["client"],
+                "keyword": info["keyword"],
+                "days": days_ago,
+                "last_date": info["date"].strftime("%Y-%m-%d"),
+            })
+
+    return sorted(reminders, key=lambda r: r["days"], reverse=True)
+
+# Show reminders
+_reminders = _check_audit_reminders()
+if _reminders:
+    for r in _reminders:
+        if r["type"] == "quarterly":
+            st.warning(
+                f"**Quarterly audit overdue:** {r['client']} — \"{r['keyword']}\" "
+                f"(last audit: {r['last_date']}, {r['days']} days ago). "
+                f"Run a new audit and compare with the previous one to show progress."
+            )
+        else:
+            st.info(
+                f"**Monthly audit due:** {r['client']} — \"{r['keyword']}\" "
+                f"(last audit: {r['last_date']}, {r['days']} days ago). "
+                f"Time to run a follow-up audit and compare results."
+            )
+
+
 # ---------------- SIDEBAR ----------------
 
 st.sidebar.markdown(f"Logged in as: **{st.session_state.get('username', '')}** ({st.session_state.get('role', '')})")
@@ -204,6 +273,23 @@ PREVIOUS AUDITS:
 - Click "View" to reload any past audit instantly (no re-scraping needed)
 - Each audit creates a separate tab in the Google Sheet with the full report
 
+COMPARE AUDITS (Progress Tracker):
+- Scroll to the bottom of the page to find "Compare Audits"
+- Select a Baseline (older audit) and a Current (newer audit)
+- Click "Compare These Audits"
+- AI analyzes both reports and generates a Progress Report showing:
+  * Executive Summary of progress
+  * Key Metrics Comparison table (reviews, rating, photos, velocity)
+  * What Improved with specific evidence
+  * What Stayed the Same
+  * What Declined (if anything)
+  * Which recommendations from the first audit were implemented
+  * Next 5 Priority Actions ranked by impact
+- Best used monthly: run audit Month 1, implement suggestions, run same
+  audit Month 2, then compare to measure improvement
+- Costs ~$0.03-0.05 per comparison (one Claude API call)
+- Download the Progress Report as Markdown
+
 TIPS:
 - Each audit uses Apify credits (scraping) + Anthropic credits (AI analysis)
 - A full audit with 3 competitors costs roughly $0.05-0.15 in Claude API credits
@@ -212,6 +298,7 @@ TIPS:
 - The client's own reviews are included in the Review Framework analysis
 - Downloaded reports include the Fast Hippo Media logo and brand colors
 - All URLs in the Word document are clickable hyperlinks
+- Compare audits monthly to track GBP improvement over time
 """
 
 with st.sidebar.expander("**How to use**", expanded=False):
@@ -223,7 +310,8 @@ with st.sidebar.expander("**How to use**", expanded=False):
         "5. AI analyzes across 7 sections\n"
         "6. Download branded PDF, Word, or Markdown\n"
         "7. Auto-saved to Google Sheets\n"
-        "8. View past audits below or in sidebar"
+        "8. View past audits below or in sidebar\n"
+        "9. Compare two audits to track progress"
     )
     st.download_button(
         "📄 Download Full Instructions",
@@ -2015,7 +2103,10 @@ if not run_audit:
     if prev_audits and len(prev_audits) >= 2:
         st.divider()
         st.subheader("Compare Audits (Progress Tracker)")
-        st.caption("Select two audits for the same client to see how your GBP improved over time.")
+        st.caption(
+            "Select two audits for the same client to see how your GBP improved over time. "
+            "Best used monthly: run audit > implement suggestions > run same audit next month > compare."
+        )
 
         # Build labels for dropdowns
         audit_options = {}
