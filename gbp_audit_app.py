@@ -1648,6 +1648,12 @@ if run_audit:
     if not client_gbp_url:
         st.error("Please enter the client GBP URL.")
         st.stop()
+    if "\n" in target_keyword or "," in target_keyword:
+        st.error("Please enter only one keyword/service. Run separate audits for each keyword.")
+        st.stop()
+    if not target_keyword:
+        st.error("Please enter a target keyword or service.")
+        st.stop()
 
     competitor_urls = [u.strip() for u in [comp1_url, comp2_url, comp3_url] if u.strip()]
     if not competitor_urls:
