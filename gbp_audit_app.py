@@ -38,17 +38,34 @@ check_login()
 # ---------------- IMPORTS ----------------
 
 import os
+import re
 import json
 import time
 import pandas as pd
+from io import BytesIO
 from datetime import datetime
 from apify_client import ApifyClient
+import gspread
 
 try:
     import anthropic
     HAS_ANTHROPIC = True
 except ImportError:
     HAS_ANTHROPIC = False
+
+try:
+    from docx import Document
+    from docx.shared import Inches, Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    HAS_DOCX = True
+except ImportError:
+    HAS_DOCX = False
+
+try:
+    from fpdf import FPDF
+    HAS_FPDF = True
+except ImportError:
+    HAS_FPDF = False
 
 # ---------------- PAGE CONFIG ----------------
 
@@ -71,16 +88,430 @@ st.sidebar.markdown(
     "2. Click **Run Audit**\n"
     "3. Apify scrapes all profiles, reviews, and photos\n"
     "4. Claude AI analyzes the data across 7 sections\n"
-    "5. Download or copy the full report"
+    "5. Download report as PDF, Word, or Markdown"
 )
 
 # ---------------- CONFIG ----------------
+
+AUDIT_SPREADSHEET_ID = "1oksMAwVZNeuf1EIRYz9EXoli9C1pkUF4KYrunRoZQ7A"
 
 APIFY_ACTORS = {
     "gbp_profile": "compass/crawler-google-places",
     "gbp_reviews": "compass/google-maps-reviews-scraper",
     "website_content": "apify/website-content-crawler",
 }
+
+
+# ---------------- GOOGLE SHEETS DATABASE ----------------
+
+def get_gsheet_client():
+    """Connect to Google Sheets using service account."""
+    try:
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        return gspread.service_account_from_dict(creds_dict)
+    except Exception:
+        pass
+    creds_path = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+    if creds_path and os.path.exists(creds_path):
+        return gspread.service_account(filename=creds_path)
+    return None
+
+
+def save_audit_to_sheets(audit_data, sections):
+    """Save audit report to Google Sheets as a persistent record."""
+    gc = get_gsheet_client()
+    if not gc:
+        st.warning("Google Sheets not configured — audit not saved to cloud.")
+        return None
+
+    try:
+        sh = gc.open_by_key(AUDIT_SPREADSHEET_ID)
+    except Exception as e:
+        st.warning(f"Could not open Google Sheet: {e}")
+        return None
+
+    client_name = audit_data.get("client_name", "Unknown")
+    keyword = audit_data.get("target_keyword", "")
+    timestamp = audit_data.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    tab_name = f"Audit - {client_name[:15]} - {datetime.now().strftime('%m/%d %H:%M')}"
+    tab_name = tab_name[:100]
+
+    try:
+        # Create a new tab with the full report
+        rows = [
+            ["GBP Competitive Audit Report"],
+            ["Client", client_name],
+            ["Keyword", keyword],
+            ["Generated", timestamp],
+            ["Competitors", ", ".join(audit_data.get("comp_labels", []))],
+            [""],
+        ]
+
+        # Add each section
+        for section_name, content in sections.items():
+            rows.append([f"=== {section_name} ==="])
+            # Split content into rows (Google Sheets has a 50000 char cell limit)
+            for line in content.split("\n"):
+                rows.append([line])
+            rows.append([""])
+
+        ws = sh.add_worksheet(title=tab_name, rows=max(len(rows) + 1, 100), cols=5)
+        ws.update(rows, value_input_option="RAW")
+
+    except Exception as e:
+        st.warning(f"Could not create audit tab: {e}")
+        return None
+
+    # Update history/index on the first sheet
+    try:
+        history_ws = sh.sheet1
+        existing = history_ws.get_all_values()
+        if not existing:
+            history_ws.update("A1:F1", [["Timestamp", "Client", "Keyword", "Sections", "Tab Name", "Status"]])
+
+        next_row = len(existing) + 1
+        history_ws.update(
+            f"A{next_row}:F{next_row}",
+            [[timestamp, client_name, keyword, len(sections), tab_name, "Complete"]],
+        )
+    except Exception as e:
+        st.caption(f"Could not update history log: {e}")
+
+    return tab_name
+
+
+def load_audit_history():
+    """Load list of past audits from Google Sheets."""
+    gc = get_gsheet_client()
+    if not gc:
+        return []
+
+    try:
+        sh = gc.open_by_key(AUDIT_SPREADSHEET_ID)
+        history_ws = sh.sheet1
+        records = history_ws.get_all_values()
+        if len(records) <= 1:
+            return []
+        headers = records[0]
+        audits = []
+        for row in records[1:]:
+            audit = {}
+            for i, h in enumerate(headers):
+                audit[h] = row[i] if i < len(row) else ""
+            audits.append(audit)
+        return list(reversed(audits))  # newest first
+    except Exception:
+        return []
+
+
+def load_audit_from_sheet(tab_name):
+    """Load a saved audit report from a specific Google Sheets tab."""
+    gc = get_gsheet_client()
+    if not gc:
+        return None
+
+    try:
+        sh = gc.open_by_key(AUDIT_SPREADSHEET_ID)
+        ws = sh.worksheet(tab_name)
+        values = ws.get_all_values()
+
+        # Parse the saved report back into sections
+        sections = {}
+        current_section = None
+        current_content = []
+        metadata = {}
+
+        for row in values:
+            cell = row[0] if row else ""
+
+            if cell.startswith("=== ") and cell.endswith(" ==="):
+                # Save previous section
+                if current_section:
+                    sections[current_section] = "\n".join(current_content).strip()
+                current_section = cell.replace("=== ", "").replace(" ===", "")
+                current_content = []
+            elif current_section:
+                current_content.append(cell)
+            elif cell == "Client" and len(row) > 1:
+                metadata["client_name"] = row[1]
+            elif cell == "Keyword" and len(row) > 1:
+                metadata["target_keyword"] = row[1]
+            elif cell == "Generated" and len(row) > 1:
+                metadata["timestamp"] = row[1]
+
+        # Save last section
+        if current_section:
+            sections[current_section] = "\n".join(current_content).strip()
+
+        return {"metadata": metadata, "sections": sections}
+    except Exception as e:
+        st.error(f"Could not load audit: {e}")
+        return None
+
+
+# ---------------- DOCX EXPORT ----------------
+
+def generate_docx(audit_data, sections):
+    """Generate a formatted Word document from audit results."""
+    if not HAS_DOCX:
+        return None
+
+    doc = Document()
+
+    # Title
+    title = doc.add_heading("GBP Competitive Audit Report", level=0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # Metadata
+    meta_para = doc.add_paragraph()
+    meta_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    client_name = audit_data.get("client_name", "Client")
+    keyword = audit_data.get("target_keyword", "")
+    timestamp = audit_data.get("timestamp", "")
+    meta_para.add_run(f"Client: {client_name}\n").bold = True
+    meta_para.add_run(f"Target Keyword: {keyword}\n")
+    meta_para.add_run(f"Generated: {timestamp}\n")
+    meta_para.add_run(f"Competitors: {', '.join(audit_data.get('comp_labels', []))}")
+
+    doc.add_page_break()
+
+    # Table of Contents
+    doc.add_heading("Table of Contents", level=1)
+    for i, section_name in enumerate(sections.keys(), 1):
+        doc.add_paragraph(f"{section_name}", style="List Number")
+
+    doc.add_page_break()
+
+    # Sections
+    for section_name, content in sections.items():
+        doc.add_heading(section_name, level=1)
+
+        if content.startswith("ERROR"):
+            p = doc.add_paragraph(content)
+            p.runs[0].font.color.rgb = RGBColor(255, 0, 0)
+            continue
+
+        # Parse markdown content into Word formatting
+        lines = content.split("\n")
+        in_table = False
+        table_rows = []
+        table_header = []
+
+        for line in lines:
+            stripped = line.strip()
+
+            # Skip empty lines
+            if not stripped:
+                if in_table and table_rows:
+                    # End of table, render it
+                    _add_table_to_doc(doc, table_header, table_rows)
+                    in_table = False
+                    table_rows = []
+                    table_header = []
+                continue
+
+            # Detect markdown table rows
+            if "|" in stripped and stripped.startswith("|"):
+                cells = [c.strip() for c in stripped.split("|")[1:-1]]
+                # Skip separator rows (---|---|---)
+                if all(re.match(r'^[-:]+$', c) for c in cells if c):
+                    continue
+                if not in_table:
+                    in_table = True
+                    table_header = cells
+                else:
+                    table_rows.append(cells)
+                continue
+
+            # If we were in a table, flush it
+            if in_table and table_rows:
+                _add_table_to_doc(doc, table_header, table_rows)
+                in_table = False
+                table_rows = []
+                table_header = []
+
+            # Headings
+            if stripped.startswith("### "):
+                doc.add_heading(stripped[4:], level=3)
+            elif stripped.startswith("## "):
+                doc.add_heading(stripped[3:], level=2)
+            elif stripped.startswith("# "):
+                doc.add_heading(stripped[2:], level=1)
+            # Bullet points
+            elif stripped.startswith("- ") or stripped.startswith("* "):
+                text = stripped[2:]
+                p = doc.add_paragraph(style="List Bullet")
+                _add_formatted_text(p, text)
+            # Numbered lists
+            elif re.match(r'^\d+\.\s', stripped):
+                text = re.sub(r'^\d+\.\s', '', stripped)
+                p = doc.add_paragraph(style="List Number")
+                _add_formatted_text(p, text)
+            # Regular paragraph
+            else:
+                p = doc.add_paragraph()
+                _add_formatted_text(p, stripped)
+
+        # Flush any remaining table
+        if in_table and table_rows:
+            _add_table_to_doc(doc, table_header, table_rows)
+
+        doc.add_page_break()
+
+    # Save to buffer
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
+def _add_table_to_doc(doc, headers, rows):
+    """Add a formatted table to the Word document."""
+    if not headers:
+        return
+    num_cols = len(headers)
+    table = doc.add_table(rows=1 + len(rows), cols=num_cols)
+    table.style = "Light Grid Accent 1"
+
+    # Header row
+    for i, header in enumerate(headers):
+        cell = table.rows[0].cells[i] if i < num_cols else None
+        if cell:
+            cell.text = header
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.bold = True
+                    run.font.size = Pt(9)
+
+    # Data rows
+    for r_idx, row_data in enumerate(rows):
+        for c_idx, cell_text in enumerate(row_data):
+            if c_idx < num_cols:
+                cell = table.rows[r_idx + 1].cells[c_idx]
+                cell.text = cell_text
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.size = Pt(9)
+
+
+def _add_formatted_text(paragraph, text):
+    """Add text with basic markdown bold/italic formatting to a paragraph."""
+    # Handle **bold** and *italic*
+    parts = re.split(r'(\*\*.*?\*\*|\*.*?\*)', text)
+    for part in parts:
+        if part.startswith("**") and part.endswith("**"):
+            run = paragraph.add_run(part[2:-2])
+            run.bold = True
+        elif part.startswith("*") and part.endswith("*"):
+            run = paragraph.add_run(part[1:-1])
+            run.italic = True
+        else:
+            paragraph.add_run(part)
+
+
+# ---------------- PDF EXPORT ----------------
+
+def generate_pdf(audit_data, sections):
+    """Generate a PDF report from audit results."""
+    if not HAS_FPDF:
+        return None
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=20)
+
+    # Cover page
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 24)
+    pdf.cell(0, 60, "", ln=True)
+    pdf.cell(0, 15, "GBP Competitive Audit Report", ln=True, align="C")
+    pdf.set_font("Helvetica", "", 14)
+    pdf.cell(0, 10, "", ln=True)
+
+    client_name = audit_data.get("client_name", "Client")
+    keyword = audit_data.get("target_keyword", "")
+    timestamp = audit_data.get("timestamp", "")
+
+    pdf.cell(0, 10, f"Client: {client_name}", ln=True, align="C")
+    pdf.cell(0, 8, f"Keyword: {keyword}", ln=True, align="C")
+    pdf.cell(0, 8, f"Generated: {timestamp}", ln=True, align="C")
+    pdf.cell(0, 8, f"Competitors: {', '.join(audit_data.get('comp_labels', []))}", ln=True, align="C")
+
+    # Sections
+    for section_name, content in sections.items():
+        pdf.add_page()
+
+        # Section title
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.cell(0, 12, section_name, ln=True)
+        pdf.cell(0, 3, "", ln=True)
+
+        if content.startswith("ERROR"):
+            pdf.set_font("Helvetica", "", 11)
+            pdf.set_text_color(255, 0, 0)
+            pdf.multi_cell(0, 6, content)
+            pdf.set_text_color(0, 0, 0)
+            continue
+
+        # Parse content line by line
+        lines = content.split("\n")
+        for line in lines:
+            stripped = line.strip()
+
+            if not stripped:
+                pdf.cell(0, 3, "", ln=True)
+                continue
+
+            # Table separator - skip
+            if re.match(r'^[\|\s\-:]+$', stripped) and "|" in stripped:
+                continue
+
+            # Table row
+            if stripped.startswith("|") and stripped.endswith("|"):
+                cells = [c.strip() for c in stripped.split("|")[1:-1]]
+                pdf.set_font("Helvetica", "", 8)
+                # Simple table rendering
+                col_width = (pdf.w - 40) / max(len(cells), 1)
+                for cell_text in cells:
+                    # Truncate long cells
+                    display = cell_text[:60] + "..." if len(cell_text) > 60 else cell_text
+                    pdf.cell(col_width, 6, display, border=1)
+                pdf.ln()
+                continue
+
+            # Headings
+            if stripped.startswith("### "):
+                pdf.set_font("Helvetica", "B", 12)
+                pdf.cell(0, 8, stripped[4:], ln=True)
+            elif stripped.startswith("## "):
+                pdf.set_font("Helvetica", "B", 13)
+                pdf.cell(0, 9, stripped[3:], ln=True)
+            elif stripped.startswith("# "):
+                pdf.set_font("Helvetica", "B", 14)
+                pdf.cell(0, 10, stripped[2:], ln=True)
+            # Bullets
+            elif stripped.startswith("- ") or stripped.startswith("* "):
+                pdf.set_font("Helvetica", "", 10)
+                text = stripped[2:]
+                # Remove markdown bold markers for PDF
+                text = text.replace("**", "")
+                pdf.cell(8, 6, chr(8226))  # bullet char
+                pdf.multi_cell(0, 6, text)
+            # Numbered items
+            elif re.match(r'^\d+\.\s', stripped):
+                pdf.set_font("Helvetica", "", 10)
+                text = stripped.replace("**", "")
+                pdf.multi_cell(0, 6, text)
+            # Regular text
+            else:
+                pdf.set_font("Helvetica", "", 10)
+                text = stripped.replace("**", "")
+                pdf.multi_cell(0, 6, text)
+
+    # Output
+    buffer = BytesIO()
+    pdf.output(buffer)
+    buffer.seek(0)
+    return buffer
 
 
 # ---------------- API KEYS ----------------
@@ -152,6 +583,29 @@ def find_top_competitors(keyword, client_name_to_exclude, location="", num_resul
     except Exception as e:
         return [], str(e)
 
+
+# ---- Past Audits (sidebar) ----
+st.sidebar.divider()
+st.sidebar.markdown("**Past Audits**")
+past_audits = load_audit_history()
+if past_audits:
+    for i, audit in enumerate(past_audits[:10]):
+        label = f"{audit.get('Client', '?')} — {audit.get('Keyword', '?')} ({audit.get('Timestamp', '')[:10]})"
+        if st.sidebar.button(label, key=f"load_audit_{i}", use_container_width=True):
+            tab_name = audit.get("Tab Name", "")
+            if tab_name:
+                loaded = load_audit_from_sheet(tab_name)
+                if loaded:
+                    st.session_state["audit_sections"] = loaded["sections"]
+                    st.session_state["audit_data"] = {
+                        "client_name": loaded["metadata"].get("client_name", ""),
+                        "target_keyword": loaded["metadata"].get("target_keyword", ""),
+                        "timestamp": loaded["metadata"].get("timestamp", ""),
+                        "comp_labels": [],
+                    }
+                    st.rerun()
+else:
+    st.sidebar.caption("No past audits found")
 
 # ---------------- INPUT FORM ----------------
 
@@ -840,6 +1294,12 @@ if run_audit:
 
     st.session_state["audit_sections"] = sections
 
+    # ---- SAVE TO GOOGLE SHEETS ----
+    with st.spinner("Saving audit to Google Sheets..."):
+        saved_tab = save_audit_to_sheets(st.session_state["audit_data"], sections)
+        if saved_tab:
+            st.success(f"Audit saved to Google Sheets tab: **{saved_tab}**")
+
 
 # ---------------- DISPLAY RESULTS ----------------
 
@@ -864,7 +1324,11 @@ if "audit_sections" in st.session_state:
 
     # ---- FULL REPORT DOWNLOAD ----
     st.divider()
+    st.subheader("Download Report")
 
+    filename_base = f"gbp_audit_{audit_data.get('client_name', 'client').replace(' ', '_').lower()}"
+
+    # Build markdown report
     full_report = f"# GBP Competitive Audit Report\n"
     full_report += f"**Client:** {audit_data.get('client_name', '')}\n"
     full_report += f"**Keyword:** {audit_data.get('target_keyword', '')}\n"
@@ -875,17 +1339,48 @@ if "audit_sections" in st.session_state:
     for section_name, content in sections.items():
         full_report += f"## {section_name}\n\n{content}\n\n---\n\n"
 
-    dl_col1, dl_col2 = st.columns(2)
+    dl_col1, dl_col2, dl_col3, dl_col4 = st.columns(4)
+
+    # PDF
     with dl_col1:
+        pdf_buffer = generate_pdf(audit_data, sections)
+        if pdf_buffer:
+            st.download_button(
+                "📥 Download PDF",
+                pdf_buffer,
+                f"{filename_base}.pdf",
+                "application/pdf",
+                use_container_width=True,
+            )
+        else:
+            st.caption("PDF export unavailable (install fpdf2)")
+
+    # Word DOCX
+    with dl_col2:
+        docx_buffer = generate_docx(audit_data, sections)
+        if docx_buffer:
+            st.download_button(
+                "📥 Download Word",
+                docx_buffer,
+                f"{filename_base}.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True,
+            )
+        else:
+            st.caption("Word export unavailable (install python-docx)")
+
+    # Markdown
+    with dl_col3:
         st.download_button(
-            "📥 Download Full Report (Markdown)",
+            "📥 Download Markdown",
             full_report.encode("utf-8"),
-            f"gbp_audit_{audit_data.get('client_name', 'client').replace(' ', '_').lower()}.md",
+            f"{filename_base}.md",
             "text/markdown",
             use_container_width=True,
         )
-    with dl_col2:
-        # Also offer raw data export
+
+    # Raw JSON data
+    with dl_col4:
         if audit_data.get("client_profile"):
             raw_data = {
                 "client_profile": audit_data.get("client_profile"),
@@ -894,9 +1389,9 @@ if "audit_sections" in st.session_state:
                 "competitor_reviews_counts": [len(r) for r in audit_data.get("comp_reviews", [])],
             }
             st.download_button(
-                "📥 Download Raw Data (JSON)",
+                "📥 Download Raw Data",
                 json.dumps(raw_data, indent=2, default=str).encode("utf-8"),
-                f"gbp_audit_raw_{audit_data.get('client_name', 'client').replace(' ', '_').lower()}.json",
+                f"{filename_base}_raw.json",
                 "application/json",
                 use_container_width=True,
             )
