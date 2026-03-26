@@ -181,22 +181,7 @@ def _check_audit_reminders():
 
     return sorted(reminders, key=lambda r: r["days"], reverse=True)
 
-# Show reminders
-_reminders = _check_audit_reminders()
-if _reminders:
-    for r in _reminders:
-        if r["type"] == "quarterly":
-            st.warning(
-                f"**Quarterly audit overdue:** {r['client']} — \"{r['keyword']}\" "
-                f"(last audit: {r['last_date']}, {r['days']} days ago). "
-                f"Run a new audit and compare with the previous one to show progress."
-            )
-        else:
-            st.info(
-                f"**Monthly audit due:** {r['client']} — \"{r['keyword']}\" "
-                f"(last audit: {r['last_date']}, {r['days']} days ago). "
-                f"Time to run a follow-up audit and compare results."
-            )
+# Reminders will be shown after functions are defined (see below)
 
 
 # ---------------- SIDEBAR ----------------
@@ -1189,6 +1174,23 @@ def find_top_competitors(keyword, client_name_to_exclude, location="", num_resul
     except Exception as e:
         return [], str(e)
 
+
+# ---- Show audit reminders (now that functions are defined) ----
+_reminders = _check_audit_reminders()
+if _reminders:
+    for r in _reminders:
+        if r["type"] == "quarterly":
+            st.warning(
+                f"**Quarterly audit overdue:** {r['client']} — \"{r['keyword']}\" "
+                f"(last audit: {r['last_date']}, {r['days']} days ago). "
+                f"Run a new audit and compare with the previous one to show progress."
+            )
+        else:
+            st.info(
+                f"**Monthly audit due:** {r['client']} — \"{r['keyword']}\" "
+                f"(last audit: {r['last_date']}, {r['days']} days ago). "
+                f"Time to run a follow-up audit and compare results."
+            )
 
 # ---- Past Audits count (sidebar) ----
 st.sidebar.divider()
