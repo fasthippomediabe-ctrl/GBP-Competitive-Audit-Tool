@@ -98,59 +98,79 @@ instructions_text = """GBP COMPETITOR'S AUDIT TOOL - User Guide
 ========================================
 
 STEP 1: Enter Client Information
-- Client Business Name (required)
-- Client GBP URL - Google Maps link (required)
-- Client Website (optional but recommended)
-- Target Keyword / Service (e.g. "plumber in Austin TX")
+- Client Business Name (required) - will be auto-capitalized
+- Client GBP URL - paste the Google Maps link (required)
+- Client Website (optional but recommended - used for deeper analysis)
+- Target Keyword / Service - enter ONE keyword only (e.g. "plumber in Austin TX")
+  NOTE: Only one keyword per audit. Run separate audits for different keywords.
 
 STEP 2: Find Competitors
-- Enter a location (e.g. "Plano, Texas")
-- Choose search area: City only, Metro area, or Entire state
-- Click "Find Top Competitors" to auto-fill from Google Maps rankings
-- OR paste competitor GBP URLs manually
-- You can select/deselect competitors from the results list
+- Enter a location (e.g. "Plano, Texas" or "Dallas, TX")
+- Choose search area:
+  * City only - searches that exact city
+  * Metro area - broadens to nearby cities
+  * Entire state - searches statewide (uses part after comma, e.g. "Texas")
+- Click "Find Top Competitors" to auto-fill from current Google Maps rankings
+- The top 3 are auto-selected. Click the dropdown to select different competitors
+- OR paste competitor GBP URLs manually in the 3 URL fields
 
 STEP 3: Configure Scraping Options
-- Max reviews per business (default: 100)
-- Max photos per business (default: 20)
+- Max reviews per business (default: 100, max: 500)
+- Max photos per business (default: 20, max: 100)
 - Website scraping on/off (scrapes services, about pages, etc.)
-- Max pages to crawl per website (default: 5)
+- Max pages to crawl per website (default: 5, max: 20)
+- Lower values = faster + cheaper. Higher values = more data for AI analysis
 
 STEP 4: Run the Audit
 - Click "Run Audit" to start
 - Phase 1: Apify scrapes all GBP profiles, reviews, photos, and websites
 - Phase 2: Claude AI analyzes the data across 7 sections
+- Click "Stop Audit" at any time to halt after the current step
+- Competitor names are automatically detected from their GBP profiles
 
 AUDIT SECTIONS:
-1. Client vs Competitor Overview - comparison table
-2. Top 7 Ranking Levers - evidence-based ranking factors
-3. GBP Product Instructions - step-by-step product setup
-4. Competitor Patterns - observations only, no advice
-5. Outlier Analysis - anomalies only, no advice
-6. Review Framework - review acquisition & response strategy
-7. Photo Upload Plan - weekly photo cadence & types
+1. Client vs Competitor Overview - side-by-side comparison table
+2. Top 7 Ranking Levers - evidence-based ranking factors (no generic advice)
+3. GBP Product Instructions - step-by-step product setup for client's services
+4. Competitor Patterns - observations only, no advice or recommendations
+5. Outlier Analysis - anomalies only, no advice or fixes
+6. Review Framework - review acquisition & response strategy with templates
+7. Photo Upload Plan - weekly photo cadence, types, and geo-tagging tips
 
 STEP 5: Download & Save
-- Reports auto-save to Google Sheets
-- Download as PDF, Word (DOCX), Markdown, or Raw JSON
-- View past audits from the sidebar
+- Reports auto-save to Google Sheets (View Audit History link in sidebar)
+- Download as branded PDF (with Fast Hippo Media logo and colors)
+- Download as branded Word/DOCX (with logo, colored tables, clickable links)
+- Download as Markdown (.md) for technical use
+- Download Raw Data (JSON) for further analysis
+- View past audits from the sidebar or the "Previous Audits" section
+
+PREVIOUS AUDITS:
+- All completed audits are saved to Google Sheets automatically
+- View past audits in the sidebar or the main "Previous Audits" section
+- Click "View" to reload any past audit instantly (no re-scraping needed)
+- Each audit creates a separate tab in the Google Sheet with the full report
 
 TIPS:
 - Each audit uses Apify credits (scraping) + Anthropic credits (AI analysis)
-- A full audit costs roughly $0.05-0.15 in Claude API credits
+- A full audit with 3 competitors costs roughly $0.05-0.15 in Claude API credits
 - Reduce max reviews/photos to save Apify credits on test runs
-- Past audits can be reloaded from the sidebar without re-scraping
+- Use "City only" search for most accurate local competitor results
+- The client's own reviews are included in the Review Framework analysis
+- Downloaded reports include the Fast Hippo Media logo and brand colors
+- All URLs in the Word document are clickable hyperlinks
 """
 
 with st.sidebar.expander("**How to use**", expanded=False):
     st.markdown(
-        "1. Enter client info + target keyword\n"
+        "1. Enter client info + **one** target keyword\n"
         "2. Click **Find Top Competitors** or paste URLs\n"
-        "3. Click **Run Audit**\n"
-        "4. Apify scrapes profiles, reviews, photos & websites\n"
-        "5. Claude AI analyzes across 7 sections\n"
-        "6. Download as PDF, Word, or Markdown\n"
-        "7. Auto-saved to Google Sheets"
+        "3. Adjust scraping options if needed\n"
+        "4. Click **Run Audit** (Stop anytime)\n"
+        "5. AI analyzes across 7 sections\n"
+        "6. Download branded PDF, Word, or Markdown\n"
+        "7. Auto-saved to Google Sheets\n"
+        "8. View past audits below or in sidebar"
     )
     st.download_button(
         "📄 Download Full Instructions",
