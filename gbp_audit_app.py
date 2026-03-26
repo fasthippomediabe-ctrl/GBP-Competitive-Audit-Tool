@@ -666,6 +666,15 @@ def generate_docx(audit_data, sections):
             elif stripped.startswith("# "):
                 h = doc.add_heading(stripped[2:], level=1)
                 _style_heading(h, BRAND_NAVY)
+            elif stripped.startswith("- [ ] ") or stripped.startswith("- [x] "):
+                # Checkbox item
+                is_checked = stripped.startswith("- [x] ")
+                text = stripped[6:]
+                p = doc.add_paragraph()
+                checkbox = p.add_run("☐ " if not is_checked else "☑ ")
+                checkbox.font.size = Pt(14)
+                checkbox.font.color.rgb = BRAND_BLUE
+                _add_formatted_text(p, text)
             elif stripped.startswith("- ") or stripped.startswith("* "):
                 text = stripped[2:]
                 p = doc.add_paragraph(style="List Bullet")
@@ -1049,6 +1058,22 @@ def generate_pdf(audit_data, sections):
                 pdf.cell(0, 10, _sanitize_pdf_text(f"  {stripped[2:]}"), ln=True, fill=True)
                 pdf.set_text_color(*DARK)
                 pdf.cell(0, 2, "", ln=True)
+            # Checkboxes
+            elif stripped.startswith("- [ ] ") or stripped.startswith("- [x] "):
+                is_checked = stripped.startswith("- [x] ")
+                pdf.set_font("Helvetica", "", 10)
+                pdf.set_text_color(*DARK)
+                text = stripped[6:].replace("**", "")
+                y_pos = pdf.get_y()
+                # Draw checkbox square
+                pdf.set_draw_color(*BLUE)
+                pdf.set_line_width(0.4)
+                pdf.rect(pdf.l_margin + 2, y_pos + 1, 3.5, 3.5, "D")
+                if is_checked:
+                    pdf.set_fill_color(*BLUE)
+                    pdf.rect(pdf.l_margin + 2.8, y_pos + 1.8, 2, 2, "F")
+                pdf.set_x(pdf.l_margin + 9)
+                pdf.multi_cell(0, 6, _sanitize_pdf_text(text))
             # Bullets with left accent
             elif stripped.startswith("- ") or stripped.startswith("* "):
                 pdf.set_font("Helvetica", "", 10)
@@ -1623,6 +1648,8 @@ def run_section_3(api_key, client_profile, client_website_content, keyword):
         "3. Recommended descriptions for each product (keyword-optimized for their market)\n"
         "4. Pricing display recommendations\n"
         "5. Photo recommendations for each product\n"
+        "6. At the end, add a 'Quick Action Items' section with checkbox format:\n"
+        "   - [ ] Action item — specific instruction (Deadline: this week/2 weeks/etc)\n"
         "Output as markdown with clear numbered steps."
     )
     return call_claude(api_key, system, user)
@@ -1710,7 +1737,9 @@ def run_section_6(api_key, client_profile, client_reviews, comp_profiles, comp_r
         "4. How keywords appear organically in reviews and owner replies\n"
         "5. Specific keyword themes to reinforce in review responses\n"
         "6. Review pacing targets (how many per week/month)\n"
-        "7. Owner reply patterns and templates (based on what competitors do)\n\n"
+        "7. Owner reply patterns and templates (based on what competitors do)\n"
+        "8. Quick Action Items — checkbox format with specific deadlines:\n"
+        "   - [ ] Action — specific instruction (Deadline: X, ~time estimate)\n\n"
         "Make it directly actionable. Avoid vague advice. Use markdown."
     )
     return call_claude(api_key, system, user)
@@ -1742,8 +1771,45 @@ def run_section_7(api_key, client_profile, comp_profiles, comp_labels, client_na
         "3. Photo type priorities for the client\n"
         "4. Weekly upload cadence recommendation\n"
         "5. Specific photo ideas based on the client's services\n"
-        "6. Geo-tagging and naming recommendations\n\n"
+        "6. Geo-tagging and naming recommendations\n"
+        "7. Quick Action Items — checkbox format with specific deadlines:\n"
+        "   - [ ] Action — specific instruction (Deadline: X, ~time estimate)\n\n"
         "Make the plan directly actionable. Avoid vague advice. Use markdown."
+    )
+    return call_claude(api_key, system, user)
+
+
+def run_section_8(api_key, all_sections_content, client_name, keyword):
+    """Section 8: Consolidated Action Plan with prioritized checklist."""
+    system = (
+        "You are a local SEO project manager creating a clear, actionable implementation plan. "
+        "You will receive the full audit report (all 7 sections). Your job is to extract every actionable "
+        "recommendation and consolidate them into ONE prioritized checklist. "
+        "Be extremely specific — include exact steps, not vague advice. "
+        "Assign realistic deadlines based on effort level."
+    )
+
+    user = f"## Client: {client_name}\n## Keyword: {keyword}\n\n"
+    user += "## FULL AUDIT REPORT\n\n"
+    for s_name, s_content in all_sections_content.items():
+        user += f"### {s_name}\n{s_content[:2000]}\n\n"
+
+    user += (
+        "\n## Task\n"
+        f"Create a consolidated Action Plan for {client_name}. Requirements:\n\n"
+        "1. Extract EVERY actionable recommendation from all 7 sections above\n"
+        "2. Group them into these categories:\n"
+        "   - IMMEDIATE (do this week)\n"
+        "   - SHORT-TERM (do within 2 weeks)\n"
+        "   - ONGOING (monthly recurring tasks)\n"
+        "3. For each action item, format as a checkbox line:\n"
+        "   - [ ] **Action title** — Specific instructions (Deadline: X)\n"
+        "4. Each action must be specific enough that someone can do it without reading the full report\n"
+        "5. Include the source section (e.g. 'From: Review Framework')\n"
+        "6. Rank by impact within each category (highest impact first)\n"
+        "7. Add an estimated time per task (e.g. '~30 min', '~2 hours')\n\n"
+        "Output as markdown with checkbox format: - [ ] for each item.\n"
+        "Do NOT include vague items like 'improve SEO' — every item must be concrete and actionable."
     )
     return call_claude(api_key, system, user)
 
@@ -1927,6 +1993,17 @@ if run_audit:
                 analysis_status.error(f"{section_name}: {result}")
             else:
                 analysis_status.success(f"{section_name} complete")
+
+    # Section 8: Action Plan (runs after all other sections, needs their content)
+    if sections and not st.session_state.get("audit_stopped"):
+        with st.spinner("Analyzing: 8. Action Plan..."):
+            analysis_status.write("Running: 8. Action Plan")
+            action_plan = run_section_8(anthropic_key, sections, client_name, target_keyword)
+            sections["8. Action Plan"] = action_plan
+            if action_plan.startswith("ERROR"):
+                analysis_status.error(f"8. Action Plan: {action_plan}")
+            else:
+                analysis_status.success("8. Action Plan complete")
 
     st.session_state["audit_sections"] = sections
 
@@ -2219,13 +2296,36 @@ if not run_audit:
             cmp_report += f"**Current:** {cmp_meta.get('current', '')}\n\n---\n\n"
             cmp_report += result
 
-            st.download_button(
-                "Download Progress Report (Markdown)",
-                cmp_report.encode("utf-8"),
-                "gbp_progress_report.md",
-                "text/markdown",
-                use_container_width=True,
-            )
+            dl_cmp1, dl_cmp2 = st.columns(2)
+            with dl_cmp1:
+                # Branded Word download
+                try:
+                    cmp_audit_data = {
+                        "client_name": cmp_meta.get("baseline", "").split(" — ")[0] if " — " in cmp_meta.get("baseline", "") else "Client",
+                        "target_keyword": "Progress Comparison",
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "comp_labels": [cmp_meta.get("baseline", ""), cmp_meta.get("current", "")],
+                    }
+                    cmp_sections = {"Progress Report": result}
+                    cmp_docx = generate_docx(cmp_audit_data, cmp_sections)
+                    if cmp_docx:
+                        st.download_button(
+                            "Download Progress Report (Word)",
+                            cmp_docx,
+                            "gbp_progress_report.docx",
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True,
+                        )
+                except Exception:
+                    pass
+            with dl_cmp2:
+                st.download_button(
+                    "Download Progress Report (Markdown)",
+                    cmp_report.encode("utf-8"),
+                    "gbp_progress_report.md",
+                    "text/markdown",
+                    use_container_width=True,
+                )
 
 # ---- Footer branding ----
 st.divider()
