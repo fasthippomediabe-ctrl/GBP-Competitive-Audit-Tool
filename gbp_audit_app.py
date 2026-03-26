@@ -82,6 +82,12 @@ if st.sidebar.button("Logout"):
     st.rerun()
 
 st.sidebar.divider()
+
+st.sidebar.markdown("[Check Apify Usage & Billing](https://console.apify.com/billing)")
+st.sidebar.markdown("[Check Claude AI Billing](https://console.anthropic.com/settings/billing)")
+st.sidebar.markdown("[View Audit History (Google Sheets)](https://docs.google.com/spreadsheets/d/14WqY0En1CuLXRO5fvcy6WKzL_KYWxYV6pUf-FdaHqvU/)")
+
+st.sidebar.divider()
 st.sidebar.markdown("**How to use:**")
 st.sidebar.markdown(
     "1. Enter your client's info and up to 3 competitor GBP URLs\n"
