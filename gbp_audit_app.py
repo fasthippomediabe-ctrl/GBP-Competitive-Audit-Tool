@@ -1050,26 +1050,28 @@ def find_top_competitors(keyword, client_name_to_exclude, location="", num_resul
 
 # ---- Past Audits (sidebar) ----
 st.sidebar.divider()
-st.sidebar.markdown("**Past Audits**")
-past_audits = load_audit_history()
-if past_audits:
-    for i, audit in enumerate(past_audits[:10]):
-        label = f"{audit.get('Client', '?')} — {audit.get('Keyword', '?')} ({audit.get('Timestamp', '')[:10]})"
-        if st.sidebar.button(label, key=f"load_audit_{i}", use_container_width=True):
-            tab_name = audit.get("Tab Name", "")
-            if tab_name:
-                loaded = load_audit_from_sheet(tab_name)
-                if loaded:
-                    st.session_state["audit_sections"] = loaded["sections"]
-                    st.session_state["audit_data"] = {
-                        "client_name": loaded["metadata"].get("client_name", ""),
-                        "target_keyword": loaded["metadata"].get("target_keyword", ""),
-                        "timestamp": loaded["metadata"].get("timestamp", ""),
-                        "comp_labels": [],
-                    }
-                    st.rerun()
-else:
-    st.sidebar.caption("No past audits found")
+with st.sidebar.expander("**Past Audits**", expanded=False):
+    past_audits = load_audit_history()
+    if past_audits:
+        for i, audit in enumerate(past_audits[:5]):
+            label = f"{audit.get('Client', '?')} — {audit.get('Keyword', '?')} ({audit.get('Timestamp', '')[:10]})"
+            if st.button(label, key=f"load_audit_{i}", use_container_width=True):
+                tab_name = audit.get("Tab Name", "")
+                if tab_name:
+                    loaded = load_audit_from_sheet(tab_name)
+                    if loaded:
+                        st.session_state["audit_sections"] = loaded["sections"]
+                        st.session_state["audit_data"] = {
+                            "client_name": loaded["metadata"].get("client_name", ""),
+                            "target_keyword": loaded["metadata"].get("target_keyword", ""),
+                            "timestamp": loaded["metadata"].get("timestamp", ""),
+                            "comp_labels": [],
+                        }
+                        st.rerun()
+        if len(past_audits) > 5:
+            st.caption(f"+ {len(past_audits) - 5} more (see Previous Audits below)")
+    else:
+        st.caption("No past audits found")
 
 # ---------------- INPUT FORM ----------------
 
@@ -1628,7 +1630,7 @@ if "audit_sections" not in st.session_state and not run_audit:
     st.subheader("Previous Audits")
     prev_audits = load_audit_history()
     if prev_audits:
-        for i, audit in enumerate(prev_audits[:10]):
+        for i, audit in enumerate(prev_audits[:25]):
             a_client = audit.get("Client", "?")
             a_keyword = audit.get("Keyword", "?")
             a_time = audit.get("Timestamp", "")[:16]
@@ -1658,6 +1660,9 @@ if "audit_sections" not in st.session_state and not run_audit:
                                 st.rerun()
     else:
         st.caption("No previous audits found. Run your first audit above, or configure Google Sheets to save audit history.")
+
+    if prev_audits and len(prev_audits) > 25:
+        st.caption(f"Showing 25 of {len(prev_audits)} audits. View all in [Google Sheets](https://docs.google.com/spreadsheets/d/{AUDIT_SPREADSHEET_ID}/).")
 
 
 # ---------------- MAIN AUDIT LOGIC ----------------
