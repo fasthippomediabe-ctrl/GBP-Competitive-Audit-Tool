@@ -1185,7 +1185,7 @@ def run_section_5(api_key, comp_profiles, comp_reviews, comp_labels, keyword):
     return call_claude(api_key, system, user)
 
 
-def run_section_6(api_key, client_profile, comp_profiles, comp_reviews, comp_labels, client_name, keyword):
+def run_section_6(api_key, client_profile, client_reviews, comp_profiles, comp_reviews, comp_labels, client_name, keyword):
     """Section 6: Review Acquisition & Response Framework"""
     system = (
         "You are a local SEO specialist focused on review strategy. "
@@ -1194,7 +1194,8 @@ def run_section_6(api_key, client_profile, comp_profiles, comp_reviews, comp_lab
     )
 
     user = "## Client\n"
-    user += format_profile_summary(client_profile, client_name) + "\n\n"
+    user += format_profile_summary(client_profile, client_name) + "\n"
+    user += format_reviews_summary(client_reviews, client_name) + "\n\n"
 
     for prof, revs, label in zip(comp_profiles, comp_reviews, comp_labels):
         user += f"## {label}\n"
@@ -1370,7 +1371,7 @@ if run_audit:
             anthropic_key, comp_profiles, comp_reviews, comp_labels, target_keyword
         )),
         ("6. Review Framework", lambda: run_section_6(
-            anthropic_key, client_profile, comp_profiles, comp_reviews, comp_labels, client_name, target_keyword
+            anthropic_key, client_profile, client_reviews, comp_profiles, comp_reviews, comp_labels, client_name, target_keyword
         )),
         ("7. Photo Upload Plan", lambda: run_section_7(
             anthropic_key, client_profile, comp_profiles, comp_labels, client_name, target_keyword
