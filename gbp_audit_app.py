@@ -590,8 +590,7 @@ def generate_pdf(audit_data, sections):
                 pdf.set_font("Helvetica", "", 10)
                 text = stripped[2:]
                 text = text.replace("**", "")
-                pdf.cell(8, 6, "-")  # simple dash bullet
-                pdf.multi_cell(0, 6, _sanitize_pdf_text(text))
+                pdf.multi_cell(0, 6, _sanitize_pdf_text(f"  - {text}"))
             # Numbered items
             elif re.match(r'^\d+\.\s', stripped):
                 pdf.set_font("Helvetica", "", 10)
@@ -1439,7 +1438,11 @@ if "audit_sections" in st.session_state:
 
     # PDF
     with dl_col1:
-        pdf_buffer = generate_pdf(audit_data, sections)
+        try:
+            pdf_buffer = generate_pdf(audit_data, sections)
+        except Exception as pdf_err:
+            pdf_buffer = None
+            st.caption(f"PDF error: {pdf_err}")
         if pdf_buffer:
             st.download_button(
                 "📥 Download PDF",
@@ -1448,6 +1451,8 @@ if "audit_sections" in st.session_state:
                 "application/pdf",
                 use_container_width=True,
             )
+        elif HAS_FPDF:
+            st.caption("PDF generation failed — use Word or Markdown instead")
         else:
             st.caption("PDF export unavailable (install fpdf2)")
 
