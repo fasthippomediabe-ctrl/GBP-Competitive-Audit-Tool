@@ -2112,8 +2112,12 @@ if not run_audit:
 
         # Build labels for dropdowns
         audit_options = {}
-        for a in prev_audits:
-            label = f"{a.get('Client', '?')} — {a.get('Keyword', '?')} ({a.get('Timestamp', '')[:10]})"
+        for idx, a in enumerate(prev_audits):
+            ts = a.get("Timestamp", "")[:16]  # Show date + time (e.g. 2026-03-26 18:12)
+            label = f"{a.get('Client', '?')} — {a.get('Keyword', '?')} ({ts})"
+            # Ensure unique labels by appending index if duplicate
+            if label in audit_options:
+                label = f"{label} #{idx}"
             audit_options[label] = a.get("Tab Name", "")
 
         option_list = list(audit_options.keys())
