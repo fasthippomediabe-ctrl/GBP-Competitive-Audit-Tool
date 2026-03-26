@@ -107,17 +107,20 @@ def get_anthropic_key():
 
 # ---------------- AUTO-FIND COMPETITORS ----------------
 
-def find_top_competitors(keyword, client_name_to_exclude, num_results=10):
-    """Search Google Maps for the keyword and return top-ranking businesses (excluding client)."""
+def find_top_competitors(keyword, client_name_to_exclude, location="", num_results=10):
+    """Search Google Maps for the keyword in a specific location and return top-ranking businesses."""
     token = get_apify_token()
     if not token:
         return [], "Missing APIFY_API_TOKEN"
+
+    # Combine keyword with location for geo-targeted search
+    search_query = f"{keyword} in {location}" if location else keyword
 
     try:
         client = ApifyClient(token)
         run = client.actor(APIFY_ACTORS["gbp_profile"]).call(
             run_input={
-                "searchStringsArray": [keyword],
+                "searchStringsArray": [search_query],
                 "maxCrawledPlacesPerSearch": num_results,
                 "language": "en",
                 "maxReviews": 0,
@@ -164,19 +167,45 @@ with col2:
 
 st.subheader("Competitor GBP URLs")
 
-# Auto-find competitors button
-auto_col1, auto_col2 = st.columns([3, 1])
-with auto_col1:
-    st.caption("Auto-fill from current Google Maps rankings, or paste URLs manually")
-with auto_col2:
+# Auto-find competitors
+st.caption("Auto-fill from current Google Maps rankings, or paste URLs manually")
+search_col1, search_col2, search_col3 = st.columns([2, 2, 1])
+with search_col1:
+    comp_search_location = st.text_input(
+        "Competitor search location",
+        placeholder="e.g. Plano, Texas or Dallas, TX or Texas",
+        key="comp_location",
+    )
+with search_col2:
+    comp_search_radius = st.selectbox(
+        "Search area",
+        ["City only", "Metro area (nearby cities)", "Entire state"],
+        key="comp_radius",
+    )
+with search_col3:
+    st.markdown("<br>", unsafe_allow_html=True)  # vertical spacing
     find_comps = st.button("🔍 Find Top Competitors", use_container_width=True)
 
 if find_comps:
     if not target_keyword:
-        st.error("Enter a target keyword first (e.g. 'plumber in Austin TX')")
+        st.error("Enter a target keyword first (e.g. 'Digital Marketing Agency')")
+    elif not comp_search_location:
+        st.error("Enter a location to search competitors in (e.g. 'Plano, Texas')")
     else:
-        with st.spinner(f"Searching Google Maps for: {target_keyword}..."):
-            competitors_found, error = find_top_competitors(target_keyword, client_name)
+        # Build location string based on search area selection
+        location = comp_search_location.strip()
+        if comp_search_radius == "Metro area (nearby cities)":
+            # Add "near" to broaden slightly
+            location = f"near {location}"
+        elif comp_search_radius == "Entire state":
+            # Extract state from input if city is included
+            parts = [p.strip() for p in location.replace(",", " ").split() if p.strip()]
+            # Use just the last part (likely the state)
+            if len(parts) > 1:
+                location = parts[-1]
+
+        with st.spinner(f"Searching Google Maps for: {target_keyword} in {location}..."):
+            competitors_found, error = find_top_competitors(target_keyword, client_name, location)
             if error:
                 st.error(f"Error finding competitors: {error}")
             elif not competitors_found:
