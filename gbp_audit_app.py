@@ -200,6 +200,29 @@ st.sidebar.markdown("[View Audit History (Google Sheets)](https://docs.google.co
 
 st.sidebar.divider()
 
+# Dark mode toggle
+dark_mode = st.sidebar.toggle("Dark Mode", value=False, key="dark_mode")
+if dark_mode:
+    st.markdown("""
+    <style>
+        .stApp { background-color: #1a1a2e; color: #e0e0e0; }
+        .stMarkdown, .stText, p, li, span, label { color: #e0e0e0 !important; }
+        h1, h2, h3, h4, h5, h6 { color: #91AAEF !important; }
+        .brand-header { background: linear-gradient(135deg, #020230, #0a1a6e) !important; }
+        [data-testid="stSidebar"] { background-color: #16213e; border-right: 3px solid #0C34CA; }
+        [data-testid="stSidebar"] * { color: #d0d0d0 !important; }
+        .stTextInput > div > div > input { background-color: #2a2a4a; color: #e0e0e0; border-color: #444; }
+        .stSelectbox > div > div { background-color: #2a2a4a; color: #e0e0e0; }
+        .stTabs [data-baseweb="tab-list"] { border-bottom: 3px solid #0C34CA; }
+        .stTabs [data-baseweb="tab"] { color: #91AAEF !important; }
+        .stDataFrame { background-color: #2a2a4a; }
+        table { color: #e0e0e0 !important; }
+        .stExpander { border-color: #444 !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+st.sidebar.divider()
+
 # Downloadable instructions
 instructions_text = """GBP COMPETITOR'S AUDIT TOOL - User Guide
 ========================================
@@ -2120,9 +2143,13 @@ if "audit_sections" in st.session_state:
 
 if not run_audit:
     st.divider()
-    st.subheader("Previous Audits")
     prev_audits = load_audit_history()
-    if prev_audits:
+    audit_count = len(prev_audits) if prev_audits else 0
+
+    pa_tab, cmp_tab = st.tabs([f"Previous Audits ({audit_count})", "Compare Audits"])
+
+    with pa_tab:
+      if prev_audits:
         audit_search = st.text_input(
             "Search past audits",
             placeholder="Search by client name, keyword, date...",
@@ -2175,13 +2202,11 @@ if not run_audit:
                                     st.rerun()
         elif audit_search:
             st.caption(f"No audits found matching \"{audit_search}\"")
-    else:
+      else:
         st.caption("No previous audits found. Run your first audit above.")
 
-    # ---- COMPARE AUDITS ----
-    if prev_audits and len(prev_audits) >= 2:
-        st.divider()
-        st.subheader("Compare Audits (Progress Tracker)")
+    with cmp_tab:
+      if prev_audits and len(prev_audits) >= 2:
         st.caption(
             "Select two audits for the same client to see how your GBP improved over time. "
             "Best used monthly: run audit > implement suggestions > run same audit next month > compare."
