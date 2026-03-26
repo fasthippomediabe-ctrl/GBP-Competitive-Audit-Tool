@@ -476,6 +476,38 @@ def _add_formatted_text(paragraph, text):
 
 # ---------------- PDF EXPORT ----------------
 
+def _sanitize_pdf_text(text):
+    """Remove or replace characters that Helvetica can't render."""
+    if not text:
+        return ""
+    # Replace common unicode characters with ASCII equivalents
+    replacements = {
+        "\u2022": "-",    # bullet •
+        "\u2013": "-",    # en dash –
+        "\u2014": "--",   # em dash —
+        "\u2018": "'",    # left single quote '
+        "\u2019": "'",    # right single quote '
+        "\u201c": '"',    # left double quote "
+        "\u201d": '"',    # right double quote "
+        "\u2026": "...",  # ellipsis …
+        "\u2605": "*",    # star ★
+        "\u2606": "*",    # white star ☆
+        "\u2713": "[x]",  # check mark ✓
+        "\u2714": "[x]",  # heavy check ✔
+        "\u2717": "[ ]",  # cross mark ✗
+        "\u2718": "[ ]",  # heavy cross ✘
+        "\u00b7": "-",    # middle dot ·
+        "\u25cf": "-",    # black circle ●
+        "\u25cb": "o",    # white circle ○
+        "\u00a0": " ",    # non-breaking space
+        "\u200b": "",     # zero-width space
+    }
+    for char, replacement in replacements.items():
+        text = text.replace(char, replacement)
+    # Remove any remaining non-latin1 characters
+    return text.encode("latin-1", errors="replace").decode("latin-1")
+
+
 def generate_pdf(audit_data, sections):
     """Generate a PDF report from audit results."""
     if not HAS_FPDF:
@@ -496,10 +528,10 @@ def generate_pdf(audit_data, sections):
     keyword = audit_data.get("target_keyword", "")
     timestamp = audit_data.get("timestamp", "")
 
-    pdf.cell(0, 10, f"Client: {client_name}", ln=True, align="C")
-    pdf.cell(0, 8, f"Keyword: {keyword}", ln=True, align="C")
-    pdf.cell(0, 8, f"Generated: {timestamp}", ln=True, align="C")
-    pdf.cell(0, 8, f"Competitors: {', '.join(audit_data.get('comp_labels', []))}", ln=True, align="C")
+    pdf.cell(0, 10, _sanitize_pdf_text(f"Client: {client_name}"), ln=True, align="C")
+    pdf.cell(0, 8, _sanitize_pdf_text(f"Keyword: {keyword}"), ln=True, align="C")
+    pdf.cell(0, 8, _sanitize_pdf_text(f"Generated: {timestamp}"), ln=True, align="C")
+    pdf.cell(0, 8, _sanitize_pdf_text(f"Competitors: {', '.join(audit_data.get('comp_labels', []))}"), ln=True, align="C")
 
     # Sections
     for section_name, content in sections.items():
@@ -507,13 +539,13 @@ def generate_pdf(audit_data, sections):
 
         # Section title
         pdf.set_font("Helvetica", "B", 16)
-        pdf.cell(0, 12, section_name, ln=True)
+        pdf.cell(0, 12, _sanitize_pdf_text(section_name), ln=True)
         pdf.cell(0, 3, "", ln=True)
 
         if content.startswith("ERROR"):
             pdf.set_font("Helvetica", "", 11)
             pdf.set_text_color(255, 0, 0)
-            pdf.multi_cell(0, 6, content)
+            pdf.multi_cell(0, 6, _sanitize_pdf_text(content))
             pdf.set_text_color(0, 0, 0)
             continue
 
@@ -539,38 +571,37 @@ def generate_pdf(audit_data, sections):
                 for cell_text in cells:
                     # Truncate long cells
                     display = cell_text[:60] + "..." if len(cell_text) > 60 else cell_text
-                    pdf.cell(col_width, 6, display, border=1)
+                    pdf.cell(col_width, 6, _sanitize_pdf_text(display), border=1)
                 pdf.ln()
                 continue
 
             # Headings
             if stripped.startswith("### "):
                 pdf.set_font("Helvetica", "B", 12)
-                pdf.cell(0, 8, stripped[4:], ln=True)
+                pdf.cell(0, 8, _sanitize_pdf_text(stripped[4:]), ln=True)
             elif stripped.startswith("## "):
                 pdf.set_font("Helvetica", "B", 13)
-                pdf.cell(0, 9, stripped[3:], ln=True)
+                pdf.cell(0, 9, _sanitize_pdf_text(stripped[3:]), ln=True)
             elif stripped.startswith("# "):
                 pdf.set_font("Helvetica", "B", 14)
-                pdf.cell(0, 10, stripped[2:], ln=True)
+                pdf.cell(0, 10, _sanitize_pdf_text(stripped[2:]), ln=True)
             # Bullets
             elif stripped.startswith("- ") or stripped.startswith("* "):
                 pdf.set_font("Helvetica", "", 10)
                 text = stripped[2:]
-                # Remove markdown bold markers for PDF
                 text = text.replace("**", "")
-                pdf.cell(8, 6, chr(8226))  # bullet char
-                pdf.multi_cell(0, 6, text)
+                pdf.cell(8, 6, "-")  # simple dash bullet
+                pdf.multi_cell(0, 6, _sanitize_pdf_text(text))
             # Numbered items
             elif re.match(r'^\d+\.\s', stripped):
                 pdf.set_font("Helvetica", "", 10)
                 text = stripped.replace("**", "")
-                pdf.multi_cell(0, 6, text)
+                pdf.multi_cell(0, 6, _sanitize_pdf_text(text))
             # Regular text
             else:
                 pdf.set_font("Helvetica", "", 10)
                 text = stripped.replace("**", "")
-                pdf.multi_cell(0, 6, text)
+                pdf.multi_cell(0, 6, _sanitize_pdf_text(text))
 
     # Output
     buffer = BytesIO()
