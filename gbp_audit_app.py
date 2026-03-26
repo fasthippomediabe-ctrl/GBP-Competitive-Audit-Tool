@@ -69,9 +69,9 @@ except ImportError:
 
 # ---------------- PAGE CONFIG ----------------
 
-st.set_page_config(page_title="GBP Competitive Audit", page_icon="🏢", layout="wide")
+st.set_page_config(page_title="GBP Competitor's Audit", page_icon="🏢", layout="wide")
 
-st.title("🏢 GBP Competitive Audit Tool")
+st.title("🏢 GBP Competitor's Audit Tool")
 
 # ---------------- SIDEBAR ----------------
 
@@ -90,7 +90,7 @@ st.sidebar.markdown("[View Audit History (Google Sheets)](https://docs.google.co
 st.sidebar.divider()
 
 # Downloadable instructions
-instructions_text = """GBP COMPETITIVE AUDIT TOOL - User Guide
+instructions_text = """GBP COMPETITOR'S AUDIT TOOL - User Guide
 ========================================
 
 STEP 1: Enter Client Information
@@ -204,7 +204,7 @@ def save_audit_to_sheets(audit_data, sections):
     try:
         # Create a new tab with the full report
         rows = [
-            ["GBP Competitive Audit Report"],
+            ["GBP Competitor's Audit Report"],
             ["Client", client_name],
             ["Keyword", keyword],
             ["Generated", timestamp],
@@ -324,7 +324,7 @@ def generate_docx(audit_data, sections):
     doc = Document()
 
     # Title
-    title = doc.add_heading("GBP Competitive Audit Report", level=0)
+    title = doc.add_heading("GBP Competitor's Audit Report", level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     # Metadata
@@ -488,7 +488,7 @@ def generate_pdf(audit_data, sections):
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 24)
     pdf.cell(0, 60, "", ln=True)
-    pdf.cell(0, 15, "GBP Competitive Audit Report", ln=True, align="C")
+    pdf.cell(0, 15, "GBP Competitor's Audit Report", ln=True, align="C")
     pdf.set_font("Helvetica", "", 14)
     pdf.cell(0, 10, "", ln=True)
 
@@ -1394,7 +1394,7 @@ if "audit_sections" in st.session_state:
     filename_base = f"gbp_audit_{audit_data.get('client_name', 'client').replace(' ', '_').lower()}"
 
     # Build markdown report
-    full_report = f"# GBP Competitive Audit Report\n"
+    full_report = f"# GBP Competitor's Audit Report\n"
     full_report += f"**Client:** {audit_data.get('client_name', '')}\n"
     full_report += f"**Keyword:** {audit_data.get('target_keyword', '')}\n"
     full_report += f"**Generated:** {audit_data.get('timestamp', '')}\n"
