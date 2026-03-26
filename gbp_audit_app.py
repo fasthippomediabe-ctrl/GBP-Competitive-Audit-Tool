@@ -105,6 +105,51 @@ def get_anthropic_key():
     return key
 
 
+# ---------------- AUTO-FIND COMPETITORS ----------------
+
+def find_top_competitors(keyword, client_name_to_exclude, num_results=10):
+    """Search Google Maps for the keyword and return top-ranking businesses (excluding client)."""
+    token = get_apify_token()
+    if not token:
+        return [], "Missing APIFY_API_TOKEN"
+
+    try:
+        client = ApifyClient(token)
+        run = client.actor(APIFY_ACTORS["gbp_profile"]).call(
+            run_input={
+                "searchStringsArray": [keyword],
+                "maxCrawledPlacesPerSearch": num_results,
+                "language": "en",
+                "maxReviews": 0,
+                "maxImages": 0,
+            },
+            timeout_secs=120,
+        )
+        dataset_id = run["defaultDatasetId"]
+        items = list(client.dataset(dataset_id).iterate_items())
+
+        # Filter out the client business
+        exclude_lower = client_name_to_exclude.strip().lower() if client_name_to_exclude else ""
+        competitors = []
+        for item in items:
+            name = (item.get("title") or "").strip().lower()
+            # Skip if it matches the client name (fuzzy: check if either contains the other)
+            if exclude_lower and (exclude_lower in name or name in exclude_lower):
+                continue
+            competitors.append({
+                "name": item.get("title", "Unknown"),
+                "url": item.get("url", ""),
+                "rating": item.get("totalScore", "N/A"),
+                "reviews": item.get("reviewsCount", 0),
+                "category": item.get("categoryName", ""),
+                "address": item.get("address", ""),
+            })
+
+        return competitors, None
+    except Exception as e:
+        return [], str(e)
+
+
 # ---------------- INPUT FORM ----------------
 
 st.subheader("Client Information")
@@ -118,7 +163,55 @@ with col2:
     target_keyword = st.text_input("Target Keyword / Service", placeholder="e.g. plumber in Austin TX")
 
 st.subheader("Competitor GBP URLs")
-st.caption("Paste Google Maps URLs for up to 3 top-ranking competitors")
+
+# Auto-find competitors button
+auto_col1, auto_col2 = st.columns([3, 1])
+with auto_col1:
+    st.caption("Auto-fill from current Google Maps rankings, or paste URLs manually")
+with auto_col2:
+    find_comps = st.button("🔍 Find Top Competitors", use_container_width=True)
+
+if find_comps:
+    if not target_keyword:
+        st.error("Enter a target keyword first (e.g. 'plumber in Austin TX')")
+    else:
+        with st.spinner(f"Searching Google Maps for: {target_keyword}..."):
+            competitors_found, error = find_top_competitors(target_keyword, client_name)
+            if error:
+                st.error(f"Error finding competitors: {error}")
+            elif not competitors_found:
+                st.warning("No competitors found. Try a different keyword.")
+            else:
+                st.session_state["found_competitors"] = competitors_found
+                # Auto-fill the top 3 URLs
+                for i, comp in enumerate(competitors_found[:3]):
+                    st.session_state[f"comp{i + 1}"] = comp["url"]
+
+                st.success(f"Found {len(competitors_found)} businesses ranking for \"{target_keyword}\"")
+
+# Show found competitors as a selectable list
+if "found_competitors" in st.session_state and st.session_state["found_competitors"]:
+    with st.expander(f"📊 Top ranking businesses for \"{target_keyword}\" (click to select different competitors)", expanded=False):
+        comps = st.session_state["found_competitors"]
+        st.caption("Top 3 are auto-selected. Check/uncheck to change which competitors to audit.")
+
+        selected_comp_urls = []
+        for i, comp in enumerate(comps):
+            checked = st.checkbox(
+                f"**#{i + 1} {comp['name']}** — ⭐ {comp['rating']} ({comp['reviews']} reviews) | {comp['category']} | {comp['address']}",
+                value=(i < 3),
+                key=f"comp_select_{i}",
+            )
+            if checked:
+                selected_comp_urls.append(comp["url"])
+
+        # Update the session state with selected competitors
+        if selected_comp_urls:
+            for i in range(3):
+                if i < len(selected_comp_urls):
+                    st.session_state[f"comp{i + 1}"] = selected_comp_urls[i]
+                else:
+                    st.session_state[f"comp{i + 1}"] = ""
 
 comp1_url = st.text_input("Competitor 1 GBP URL", placeholder="https://www.google.com/maps/place/...", key="comp1")
 comp2_url = st.text_input("Competitor 2 GBP URL", placeholder="https://www.google.com/maps/place/...", key="comp2")
