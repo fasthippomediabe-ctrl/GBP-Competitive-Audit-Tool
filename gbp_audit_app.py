@@ -1962,13 +1962,14 @@ if not run_audit:
         )
 
         if audit_search:
-            search_lower = audit_search.strip().lower()
-            filtered_audits = [
-                a for a in prev_audits
-                if search_lower in a.get("Client", "").lower()
-                or search_lower in a.get("Keyword", "").lower()
-                or search_lower in a.get("Timestamp", "").lower()
-            ]
+            search_words = audit_search.strip().lower().split()
+            filtered_audits = []
+            for a in prev_audits:
+                # Combine all searchable fields into one string
+                all_text = f"{a.get('Client', '')} {a.get('Keyword', '')} {a.get('Timestamp', '')} {a.get('Tab Name', '')}".lower()
+                # Match if ALL search words are found somewhere in the audit
+                if all(word in all_text for word in search_words):
+                    filtered_audits.append(a)
         else:
             filtered_audits = prev_audits
 
