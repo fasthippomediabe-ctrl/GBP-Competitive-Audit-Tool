@@ -3,3 +3,5 @@ pandas
 apify-client
 requests
 anthropic
+python-docx
+fpdf2
