@@ -495,13 +495,27 @@ def generate_docx(audit_data, sections):
                 table_rows = []
                 table_header = []
 
-            # Headings with brand colors
+            # Headings with brand colors and backgrounds
             if stripped.startswith("### "):
                 h = doc.add_heading(stripped[4:], level=3)
                 _style_heading(h, BRAND_BLUE)
+                # Add light blue background to h3
+                from docx.oxml.ns import qn as _qn
+                from docx.oxml import OxmlElement as _OE
+                shd = _OE("w:shd")
+                shd.set(_qn("w:fill"), "E6ECFF")
+                h.paragraph_format.element.get_or_add_pPr().append(shd)
             elif stripped.startswith("## "):
                 h = doc.add_heading(stripped[3:], level=2)
                 _style_heading(h, BRAND_NAVY)
+                # Add navy background with white text
+                from docx.oxml.ns import qn as _qn
+                from docx.oxml import OxmlElement as _OE
+                shd = _OE("w:shd")
+                shd.set(_qn("w:fill"), "03045E")
+                h.paragraph_format.element.get_or_add_pPr().append(shd)
+                for run in h.runs:
+                    run.font.color.rgb = BRAND_WHITE
             elif stripped.startswith("# "):
                 h = doc.add_heading(stripped[2:], level=1)
                 _style_heading(h, BRAND_NAVY)
@@ -513,6 +527,9 @@ def generate_docx(audit_data, sections):
                 text = re.sub(r'^\d+\.\s', '', stripped)
                 p = doc.add_paragraph(style="List Number")
                 _add_formatted_text(p, text)
+                # Color the number
+                if p.runs:
+                    p.runs[0].font.color.rgb = BRAND_BLUE
             else:
                 p = doc.add_paragraph()
                 _add_formatted_text(p, stripped)
@@ -685,6 +702,9 @@ def generate_pdf(audit_data, sections):
     BLUE = (12, 52, 202)    # #0C34CA
     DARK = (45, 45, 45)     # #2D2D2D
     GRAY = (85, 85, 85)     # #555555
+    LIGHT_BLUE = (230, 236, 255)  # #E6ECFF - light blue background
+    LIGHT_GRAY = (245, 245, 250)  # #F5F5FA - section background
+    ACCENT = (40, 116, 252)  # #2874FC - bright blue accent
     WHITE = (255, 255, 255)
 
     pdf = FPDF()
@@ -693,9 +713,17 @@ def generate_pdf(audit_data, sections):
     # ---- COVER PAGE ----
     pdf.add_page()
 
+    # Full page light background
+    pdf.set_fill_color(*LIGHT_BLUE)
+    pdf.rect(0, 50, 210, 247, "F")
+
     # Navy header bar
     pdf.set_fill_color(*NAVY)
     pdf.rect(0, 0, 210, 50, "F")
+
+    # Blue accent stripe under header
+    pdf.set_fill_color(*ACCENT)
+    pdf.rect(0, 50, 210, 3, "F")
 
     # Try to add logo in header
     logo_data = _download_logo()
@@ -732,12 +760,22 @@ def generate_pdf(audit_data, sections):
 
     # Blue accent line
     pdf.set_draw_color(*BLUE)
-    pdf.set_line_width(1)
-    pdf.line(60, pdf.get_y() + 5, 150, pdf.get_y() + 5)
+    pdf.set_line_width(1.5)
+    pdf.line(50, pdf.get_y() + 5, 160, pdf.get_y() + 5)
 
-    # Metadata
+    # Metadata box
     pdf.set_y(pdf.get_y() + 15)
-    pdf.set_font("Helvetica", "", 12)
+    meta_y = pdf.get_y()
+    pdf.set_fill_color(*WHITE)
+    pdf.set_draw_color(*BLUE)
+    pdf.set_line_width(0.5)
+    pdf.rect(30, meta_y - 3, 150, 45, "FD")
+
+    # Left blue accent bar on metadata box
+    pdf.set_fill_color(*NAVY)
+    pdf.rect(30, meta_y - 3, 4, 45, "F")
+
+    pdf.set_y(meta_y)
 
     client_name = audit_data.get("client_name", "Client")
     keyword = audit_data.get("target_keyword", "")
@@ -751,33 +789,47 @@ def generate_pdf(audit_data, sections):
         ("Competitors", competitors),
     ]
     for label, value in meta_items:
+        pdf.set_x(40)
         pdf.set_text_color(*GRAY)
-        pdf.set_font("Helvetica", "", 11)
-        pdf.cell(55, 8, _sanitize_pdf_text(f"{label}:"), align="R")
+        pdf.set_font("Helvetica", "", 10)
+        pdf.cell(40, 9, _sanitize_pdf_text(f"{label}:"), align="R")
         pdf.set_text_color(*NAVY)
-        pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 8, _sanitize_pdf_text(f"  {value}"), ln=True)
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.cell(0, 9, _sanitize_pdf_text(f"  {value}"), ln=True)
 
-    # Footer on cover
-    pdf.set_y(260)
+    # Footer bar on cover
+    pdf.set_fill_color(*NAVY)
+    pdf.rect(0, 270, 210, 27, "F")
+    pdf.set_y(274)
     pdf.set_font("Helvetica", "I", 9)
-    pdf.set_text_color(*GRAY)
+    pdf.set_text_color(*WHITE)
     pdf.cell(0, 6, "Confidential - Prepared exclusively for client use", ln=True, align="C")
+    pdf.set_text_color(145, 170, 239)
+    pdf.cell(0, 6, "fasthippomedia.com", ln=True, align="C")
 
     # ---- SECTION PAGES ----
     for section_name, content in sections.items():
         pdf.add_page()
 
+        # Light background for content area
+        pdf.set_fill_color(*LIGHT_GRAY)
+        pdf.rect(0, 25, 210, 272, "F")
+
         # Section header bar
         pdf.set_fill_color(*NAVY)
-        pdf.rect(0, 0, 210, 20, "F")
+        pdf.rect(0, 0, 210, 22, "F")
+
+        # Blue accent stripe
+        pdf.set_fill_color(*ACCENT)
+        pdf.rect(0, 22, 210, 2, "F")
+
         pdf.set_font("Helvetica", "B", 12)
         pdf.set_text_color(*WHITE)
         pdf.set_y(5)
         pdf.cell(0, 10, _sanitize_pdf_text(section_name), ln=True, align="C")
 
         # Reset position below header
-        pdf.set_y(28)
+        pdf.set_y(30)
         pdf.set_text_color(*DARK)
 
         if content.startswith("ERROR"):
@@ -828,34 +880,55 @@ def generate_pdf(audit_data, sections):
 
             in_table_header = True  # Reset for next table
 
-            # Headings
+            # Headings with colored background bars
             if stripped.startswith("### "):
+                pdf.set_fill_color(*LIGHT_BLUE)
                 pdf.set_font("Helvetica", "B", 11)
                 pdf.set_text_color(*BLUE)
-                pdf.cell(0, 8, _sanitize_pdf_text(stripped[4:]), ln=True)
+                pdf.cell(0, 8, _sanitize_pdf_text(f"  {stripped[4:]}"), ln=True, fill=True)
                 pdf.set_text_color(*DARK)
             elif stripped.startswith("## "):
-                pdf.set_font("Helvetica", "B", 13)
-                pdf.set_text_color(*NAVY)
-                pdf.cell(0, 9, _sanitize_pdf_text(stripped[3:]), ln=True)
+                # Navy background heading bar
+                pdf.set_fill_color(*NAVY)
+                pdf.set_font("Helvetica", "B", 12)
+                pdf.set_text_color(*WHITE)
+                pdf.cell(0, 9, _sanitize_pdf_text(f"  {stripped[3:]}"), ln=True, fill=True)
                 pdf.set_text_color(*DARK)
+                pdf.cell(0, 2, "", ln=True)
             elif stripped.startswith("# "):
-                pdf.set_font("Helvetica", "B", 14)
-                pdf.set_text_color(*NAVY)
-                pdf.cell(0, 10, _sanitize_pdf_text(stripped[2:]), ln=True)
+                pdf.set_fill_color(*NAVY)
+                pdf.set_font("Helvetica", "B", 13)
+                pdf.set_text_color(*WHITE)
+                pdf.cell(0, 10, _sanitize_pdf_text(f"  {stripped[2:]}"), ln=True, fill=True)
                 pdf.set_text_color(*DARK)
-            # Bullets
+                pdf.cell(0, 2, "", ln=True)
+            # Bullets with left accent
             elif stripped.startswith("- ") or stripped.startswith("* "):
                 pdf.set_font("Helvetica", "", 10)
                 pdf.set_text_color(*DARK)
                 text = stripped[2:].replace("**", "")
-                pdf.multi_cell(0, 6, _sanitize_pdf_text(f"  - {text}"))
+                # Draw small blue bullet square
+                y_pos = pdf.get_y()
+                pdf.set_fill_color(*BLUE)
+                pdf.rect(pdf.l_margin + 2, y_pos + 2, 2, 2, "F")
+                pdf.set_x(pdf.l_margin + 8)
+                pdf.multi_cell(0, 6, _sanitize_pdf_text(text))
             # Numbered items
             elif re.match(r'^\d+\.\s', stripped):
                 pdf.set_font("Helvetica", "", 10)
-                pdf.set_text_color(*DARK)
-                text = stripped.replace("**", "")
-                pdf.multi_cell(0, 6, _sanitize_pdf_text(text))
+                pdf.set_text_color(*NAVY)
+                num_match = re.match(r'^(\d+\.)\s(.*)', stripped)
+                if num_match:
+                    pdf.set_font("Helvetica", "B", 10)
+                    pdf.set_text_color(*BLUE)
+                    pdf.cell(10, 6, _sanitize_pdf_text(num_match.group(1)))
+                    pdf.set_font("Helvetica", "", 10)
+                    pdf.set_text_color(*DARK)
+                    text = num_match.group(2).replace("**", "")
+                    pdf.multi_cell(0, 6, _sanitize_pdf_text(text))
+                else:
+                    text = stripped.replace("**", "")
+                    pdf.multi_cell(0, 6, _sanitize_pdf_text(text))
             # Regular text
             else:
                 pdf.set_font("Helvetica", "", 10)
