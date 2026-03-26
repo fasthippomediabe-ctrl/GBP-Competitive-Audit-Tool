@@ -1020,14 +1020,13 @@ if find_comps:
         # Build location string based on search area selection
         location = comp_search_location.strip()
         if comp_search_radius == "Metro area (nearby cities)":
-            # Add "near" to broaden slightly
             location = f"near {location}"
         elif comp_search_radius == "Entire state":
-            # Extract state from input if city is included
-            parts = [p.strip() for p in location.replace(",", " ").split() if p.strip()]
-            # Use just the last part (likely the state)
-            if len(parts) > 1:
-                location = parts[-1]
+            # Extract state portion (after comma, or use full input)
+            if "," in location:
+                # "Plano, Texas" → "Texas" / "New York, New York" → "New York"
+                location = location.split(",")[-1].strip()
+            # Otherwise use the full input as-is (e.g. "Texas" or "New York")
 
         with st.spinner(f"Searching Google Maps for: {target_keyword} in {location}..."):
             competitors_found, error = find_top_competitors(target_keyword, client_name, location)
