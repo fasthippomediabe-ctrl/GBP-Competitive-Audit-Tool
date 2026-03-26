@@ -309,12 +309,13 @@ def save_audit_to_sheets(audit_data, sections):
         history_ws = sh.sheet1
         existing = history_ws.get_all_values()
         if not existing:
-            history_ws.update("A1:F1", [["Timestamp", "Client", "Keyword", "Sections", "Tab Name", "Status"]])
+            history_ws.update("A1:G1", [["Timestamp", "Client", "Keyword", "Sections", "Tab Name", "Status", "Competitors"]])
 
+        competitors_str = ", ".join(audit_data.get("comp_labels", []))
         next_row = len(existing) + 1
         history_ws.update(
-            f"A{next_row}:F{next_row}",
-            [[timestamp, client_name, keyword, len(sections), tab_name, "Complete"]],
+            f"A{next_row}:G{next_row}",
+            [[timestamp, client_name, keyword, len(sections), tab_name, "Complete", competitors_str]],
         )
     except Exception as e:
         st.caption(f"Could not update history log: {e}")
@@ -1966,7 +1967,7 @@ if not run_audit:
             filtered_audits = []
             for a in prev_audits:
                 # Combine all searchable fields into one string
-                all_text = f"{a.get('Client', '')} {a.get('Keyword', '')} {a.get('Timestamp', '')} {a.get('Tab Name', '')}".lower()
+                all_text = f"{a.get('Client', '')} {a.get('Keyword', '')} {a.get('Timestamp', '')} {a.get('Tab Name', '')} {a.get('Competitors', '')}".lower()
                 # Match if ALL search words are found somewhere in the audit
                 if all(word in all_text for word in search_words):
                     filtered_audits.append(a)
@@ -1985,9 +1986,11 @@ if not run_audit:
                 with st.container():
                     col_info, col_btn = st.columns([5, 1])
                     with col_info:
+                        a_comps = audit.get("Competitors", "")
+                        comp_line = f" | vs {a_comps}" if a_comps else ""
                         st.markdown(
                             f"**{a_client}** — {a_keyword}  \n"
-                            f"<small style='color:#555'>{a_time} | {a_sections} sections</small>",
+                            f"<small style='color:#555'>{a_time} | {a_sections} sections{comp_line}</small>",
                             unsafe_allow_html=True,
                         )
                     with col_btn:
@@ -2007,6 +2010,125 @@ if not run_audit:
             st.caption(f"No audits found matching \"{audit_search}\"")
     else:
         st.caption("No previous audits found. Run your first audit above.")
+
+    # ---- COMPARE AUDITS ----
+    if prev_audits and len(prev_audits) >= 2:
+        st.divider()
+        st.subheader("Compare Audits (Progress Tracker)")
+        st.caption("Select two audits for the same client to see how your GBP improved over time.")
+
+        # Build labels for dropdowns
+        audit_options = {}
+        for a in prev_audits:
+            label = f"{a.get('Client', '?')} — {a.get('Keyword', '?')} ({a.get('Timestamp', '')[:10]})"
+            audit_options[label] = a.get("Tab Name", "")
+
+        option_list = list(audit_options.keys())
+
+        cmp_col1, cmp_col2 = st.columns(2)
+        with cmp_col1:
+            baseline_label = st.selectbox("Baseline (older audit)", option_list, index=min(1, len(option_list) - 1), key="cmp_baseline")
+        with cmp_col2:
+            current_label = st.selectbox("Current (newer audit)", option_list, index=0, key="cmp_current")
+
+        if st.button("Compare These Audits", type="primary", use_container_width=True, key="compare_btn"):
+            if baseline_label == current_label:
+                st.error("Please select two different audits to compare.")
+            else:
+                baseline_tab = audit_options[baseline_label]
+                current_tab = audit_options[current_label]
+
+                with st.spinner("Loading both audits..."):
+                    baseline_data = load_audit_from_sheet(baseline_tab)
+                    current_data = load_audit_from_sheet(current_tab)
+
+                if not baseline_data or not current_data:
+                    st.error("Could not load one or both audits.")
+                else:
+                    # Build comparison prompt
+                    baseline_report = ""
+                    for s_name, s_content in baseline_data["sections"].items():
+                        baseline_report += f"## {s_name}\n{s_content}\n\n"
+
+                    current_report = ""
+                    for s_name, s_content in current_data["sections"].items():
+                        current_report += f"## {s_name}\n{s_content}\n\n"
+
+                    comparison_system = (
+                        "You are a local SEO progress analyst. You will receive two audit reports for the same client "
+                        "done at different times. Your job is to compare them and identify what changed, what improved, "
+                        "and what still needs work. Be specific with data points — cite numbers, not vague statements."
+                    )
+
+                    b_meta = baseline_data["metadata"]
+                    c_meta = current_data["metadata"]
+
+                    comparison_prompt = (
+                        f"## BASELINE AUDIT\n"
+                        f"Client: {b_meta.get('client_name', '?')}\n"
+                        f"Keyword: {b_meta.get('target_keyword', '?')}\n"
+                        f"Date: {b_meta.get('timestamp', '?')}\n\n"
+                        f"{baseline_report[:8000]}\n\n"
+                        f"---\n\n"
+                        f"## CURRENT AUDIT\n"
+                        f"Client: {c_meta.get('client_name', '?')}\n"
+                        f"Keyword: {c_meta.get('target_keyword', '?')}\n"
+                        f"Date: {c_meta.get('timestamp', '?')}\n\n"
+                        f"{current_report[:8000]}\n\n"
+                        f"---\n\n"
+                        f"## Task\n"
+                        f"Compare these two audits and create a Progress Report. Include:\n\n"
+                        f"1. **Executive Summary** — 2-3 sentence overview of progress\n"
+                        f"2. **Key Metrics Comparison** — table comparing: review count, rating, photo count, "
+                        f"review velocity, owner reply rate (use actual numbers from both audits)\n"
+                        f"3. **What Improved** — specific improvements with evidence\n"
+                        f"4. **What Stayed the Same** — areas with no change\n"
+                        f"5. **What Declined** — any regressions (if any)\n"
+                        f"6. **Recommendations Implemented** — which suggestions from the baseline audit appear "
+                        f"to have been acted on, based on changes in the current audit\n"
+                        f"7. **Next Priority Actions** — top 5 things to focus on next, ranked by impact\n\n"
+                        f"Be data-driven. Cite specific numbers. Use markdown tables where appropriate."
+                    )
+
+                    anthropic_key = get_anthropic_key()
+                    if not anthropic_key:
+                        st.error("Missing ANTHROPIC_API_KEY for comparison analysis.")
+                    else:
+                        with st.spinner("AI is analyzing progress between audits..."):
+                            comparison_result = call_claude(anthropic_key, comparison_system, comparison_prompt)
+
+                        st.session_state["comparison_result"] = comparison_result
+                        st.session_state["comparison_meta"] = {
+                            "baseline": baseline_label,
+                            "current": current_label,
+                        }
+
+        # Display comparison result
+        if "comparison_result" in st.session_state:
+            cmp_meta = st.session_state.get("comparison_meta", {})
+            st.divider()
+            st.header("Progress Report")
+            st.caption(f"Comparing: {cmp_meta.get('baseline', '')} vs {cmp_meta.get('current', '')}")
+
+            result = st.session_state["comparison_result"]
+            if result.startswith("ERROR"):
+                st.error(result)
+            else:
+                st.markdown(result)
+
+            # Download comparison report
+            cmp_report = f"# GBP Progress Report\n\n"
+            cmp_report += f"**Baseline:** {cmp_meta.get('baseline', '')}\n"
+            cmp_report += f"**Current:** {cmp_meta.get('current', '')}\n\n---\n\n"
+            cmp_report += result
+
+            st.download_button(
+                "Download Progress Report (Markdown)",
+                cmp_report.encode("utf-8"),
+                "gbp_progress_report.md",
+                "text/markdown",
+                use_container_width=True,
+            )
 
 # ---- Footer branding ----
 st.divider()
