@@ -73,9 +73,62 @@ except ImportError:
 
 # ---------------- PAGE CONFIG ----------------
 
-st.set_page_config(page_title="GBP Competitor's Audit", page_icon="🏢", layout="wide")
+st.set_page_config(page_title="GBP Competitor's Audit | Fast Hippo Media", page_icon="🏢", layout="wide")
 
-st.title("🏢 GBP Competitor's Audit Tool")
+# Brand styling
+st.markdown("""
+<style>
+    /* Header bar */
+    .brand-header {
+        background: linear-gradient(135deg, #03045E, #0C34CA);
+        padding: 15px 30px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .brand-header img {
+        height: 40px;
+    }
+    .brand-header .brand-title {
+        color: white;
+        font-size: 22px;
+        font-weight: bold;
+    }
+    .brand-header .brand-sub {
+        color: #91AAEF;
+        font-size: 12px;
+    }
+    /* Accent line under tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        border-bottom: 3px solid #0C34CA;
+    }
+    .stTabs [data-baseweb="tab"] {
+        color: #03045E;
+    }
+    /* Primary button color */
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #03045E, #0C34CA);
+        border: none;
+    }
+    /* Sidebar branding */
+    [data-testid="stSidebar"] {
+        border-right: 3px solid #0C34CA;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Branded header
+st.markdown(
+    '<div class="brand-header">'
+    '<div>'
+    '<span class="brand-title">GBP Competitor\'s Audit Tool</span><br>'
+    '<span class="brand-sub">Powered by Fast Hippo Media | fasthippomedia.com</span>'
+    '</div>'
+    '</div>',
+    unsafe_allow_html=True,
+)
 
 # ---------------- SIDEBAR ----------------
 
@@ -1604,68 +1657,6 @@ def run_section_7(api_key, client_profile, comp_profiles, comp_labels, client_na
     return call_claude(api_key, system, user)
 
 
-# ---------------- PREVIOUS AUDITS (main area) ----------------
-
-if "audit_sections" not in st.session_state and not run_audit:
-    st.divider()
-    st.subheader("Previous Audits")
-    prev_audits = load_audit_history()
-    if prev_audits:
-        # Search bar
-        audit_search = st.text_input(
-            "Search past audits",
-            placeholder="Search by client name, keyword, date...",
-            key="audit_search",
-        )
-
-        # Filter audits based on search
-        if audit_search:
-            search_lower = audit_search.strip().lower()
-            filtered_audits = [
-                a for a in prev_audits
-                if search_lower in a.get("Client", "").lower()
-                or search_lower in a.get("Keyword", "").lower()
-                or search_lower in a.get("Timestamp", "").lower()
-            ]
-        else:
-            filtered_audits = prev_audits
-
-        if filtered_audits:
-            st.caption(f"Showing {len(filtered_audits)} of {len(prev_audits)} audits")
-            for i, audit in enumerate(filtered_audits):
-                a_client = audit.get("Client", "?")
-                a_keyword = audit.get("Keyword", "?")
-                a_time = audit.get("Timestamp", "")[:16]
-                a_sections = audit.get("Sections", "?")
-                a_tab = audit.get("Tab Name", "")
-
-                with st.container():
-                    col_info, col_btn = st.columns([5, 1])
-                    with col_info:
-                        st.markdown(
-                            f"**{a_client}** — {a_keyword}  \n"
-                            f"<small style='color:#555'>{a_time} | {a_sections} sections</small>",
-                            unsafe_allow_html=True,
-                        )
-                    with col_btn:
-                        if st.button("View", key=f"view_audit_{i}", use_container_width=True):
-                            if a_tab:
-                                loaded = load_audit_from_sheet(a_tab)
-                                if loaded:
-                                    st.session_state["audit_sections"] = loaded["sections"]
-                                    st.session_state["audit_data"] = {
-                                        "client_name": loaded["metadata"].get("client_name", ""),
-                                        "target_keyword": loaded["metadata"].get("target_keyword", ""),
-                                        "timestamp": loaded["metadata"].get("timestamp", ""),
-                                        "comp_labels": [],
-                                    }
-                                    st.rerun()
-        elif audit_search:
-            st.caption(f"No audits found matching \"{audit_search}\"")
-    else:
-        st.caption("No previous audits found. Run your first audit above.")
-
-
 # ---------------- MAIN AUDIT LOGIC ----------------
 
 if run_audit:
@@ -1955,3 +1946,73 @@ if "audit_sections" in st.session_state:
                 "application/json",
                 use_container_width=True,
             )
+
+
+# ---------------- PREVIOUS AUDITS (always visible at bottom) ----------------
+
+if not run_audit:
+    st.divider()
+    st.subheader("Previous Audits")
+    prev_audits = load_audit_history()
+    if prev_audits:
+        audit_search = st.text_input(
+            "Search past audits",
+            placeholder="Search by client name, keyword, date...",
+            key="audit_search",
+        )
+
+        if audit_search:
+            search_lower = audit_search.strip().lower()
+            filtered_audits = [
+                a for a in prev_audits
+                if search_lower in a.get("Client", "").lower()
+                or search_lower in a.get("Keyword", "").lower()
+                or search_lower in a.get("Timestamp", "").lower()
+            ]
+        else:
+            filtered_audits = prev_audits
+
+        if filtered_audits:
+            st.caption(f"Showing {len(filtered_audits)} of {len(prev_audits)} audits")
+            for i, audit in enumerate(filtered_audits):
+                a_client = audit.get("Client", "?")
+                a_keyword = audit.get("Keyword", "?")
+                a_time = audit.get("Timestamp", "")[:16]
+                a_sections = audit.get("Sections", "?")
+                a_tab = audit.get("Tab Name", "")
+
+                with st.container():
+                    col_info, col_btn = st.columns([5, 1])
+                    with col_info:
+                        st.markdown(
+                            f"**{a_client}** — {a_keyword}  \n"
+                            f"<small style='color:#555'>{a_time} | {a_sections} sections</small>",
+                            unsafe_allow_html=True,
+                        )
+                    with col_btn:
+                        if st.button("View", key=f"view_audit_{i}", use_container_width=True):
+                            if a_tab:
+                                loaded = load_audit_from_sheet(a_tab)
+                                if loaded:
+                                    st.session_state["audit_sections"] = loaded["sections"]
+                                    st.session_state["audit_data"] = {
+                                        "client_name": loaded["metadata"].get("client_name", ""),
+                                        "target_keyword": loaded["metadata"].get("target_keyword", ""),
+                                        "timestamp": loaded["metadata"].get("timestamp", ""),
+                                        "comp_labels": [],
+                                    }
+                                    st.rerun()
+        elif audit_search:
+            st.caption(f"No audits found matching \"{audit_search}\"")
+    else:
+        st.caption("No previous audits found. Run your first audit above.")
+
+# ---- Footer branding ----
+st.divider()
+st.markdown(
+    "<div style='text-align:center; padding:20px 0; color:#555; font-size:13px;'>"
+    "Powered by <strong style='color:#03045E;'>Fast Hippo Media</strong> | "
+    "<a href='https://fasthippomedia.com' style='color:#0C34CA; text-decoration:none;'>fasthippomedia.com</a>"
+    "</div>",
+    unsafe_allow_html=True,
+)
