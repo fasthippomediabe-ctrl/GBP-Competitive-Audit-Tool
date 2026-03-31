@@ -35,10 +35,11 @@ def load_users_from_sheets():
                 }
 
         return users if users else DEFAULT_USERS
-    except Exception:
+    except Exception as e:
+        st.error(f"User auth error: {e}")
         return DEFAULT_USERS
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_users():
     return load_users_from_sheets()
 
