@@ -2,10 +2,7 @@ import streamlit as st
 
 # ---------------- USER ACCOUNTS ----------------
 
-DEFAULT_USERS = {
-    "boss": {"password": "leadfinder123", "role": "admin"},
-    "bryan": {"password": "bryan2024", "role": "admin"},
-}
+DEFAULT_USERS = {}
 
 # Shared Users spreadsheet (same as Lead Finder & Reddit Monitor)
 USERS_SPREADSHEET_ID = "11Dxuw2zmfogqeXEMWzYMqSr9zGGjLORvzkCK1k01plU"
