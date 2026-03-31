@@ -2,25 +2,69 @@ import streamlit as st
 
 # ---------------- USER ACCOUNTS ----------------
 
-USERS = {
+DEFAULT_USERS = {
     "boss": {"password": "leadfinder123", "role": "admin"},
     "bryan": {"password": "bryan2024", "role": "admin"},
-    "user1": {"password": "user1pass", "role": "user"},
-    "user2": {"password": "user2pass", "role": "user"},
 }
+
+# Shared Users spreadsheet (same as Lead Finder & Reddit Monitor)
+USERS_SPREADSHEET_ID = "1oksMAwVZNeuf1EIRYz9EXoli9C1pkUF4KYrunRoZQ7A"
+
+def load_users_from_sheets():
+    """Load users from Google Sheets 'Users' tab (shared across all FHM apps)."""
+    try:
+        import gspread
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        gc = gspread.service_account_from_dict(creds_dict)
+        sh = gc.open_by_key(USERS_SPREADSHEET_ID)
+
+        try:
+            ws = sh.worksheet("Users")
+        except gspread.exceptions.WorksheetNotFound:
+            return DEFAULT_USERS
+
+        records = ws.get_all_values()
+        if len(records) <= 1:
+            return DEFAULT_USERS
+
+        users = {}
+        for row in records[1:]:
+            if len(row) >= 2 and row[0] and row[1]:
+                username = row[0].strip().lower()
+                users[username] = {
+                    "password": row[1],
+                    "role": row[2] if len(row) > 2 else "user",
+                    "name": row[3] if len(row) > 3 else username,
+                }
+
+        return users if users else DEFAULT_USERS
+    except Exception:
+        return DEFAULT_USERS
+
+@st.cache_data(ttl=300)
+def get_users():
+    return load_users_from_sheets()
 
 def check_login():
     def login_form():
+        st.markdown("""
+        <div style="text-align:center; padding: 2rem 0;">
+            <h2 style="color: #03045E;">🦛 Fast Hippo Media</h2>
+            <p style="color: #666;">GBP Competitive Audit Tool</p>
+        </div>
+        """, unsafe_allow_html=True)
         with st.form("Login"):
             username = st.text_input("Username")
             password = st.text_input("Password", type="password")
             submit = st.form_submit_button("Login")
 
             if submit:
-                if username in USERS and USERS[username]["password"] == password:
+                users = get_users()
+                uname = username.strip().lower()
+                if uname in users and users[uname]["password"] == password:
                     st.session_state["logged_in"] = True
-                    st.session_state["username"] = username
-                    st.session_state["role"] = USERS[username]["role"]
+                    st.session_state["username"] = uname
+                    st.session_state["role"] = users[uname]["role"]
                     st.rerun()
                 else:
                     st.error("Invalid username or password")
@@ -29,7 +73,6 @@ def check_login():
         st.session_state["logged_in"] = False
 
     if not st.session_state["logged_in"]:
-        st.title("GBP Audit Login")
         login_form()
         st.stop()
 
