@@ -32,6 +32,7 @@ def load_users_from_sheets():
                     "password": row[1],
                     "role": row[2] if len(row) > 2 else "user",
                     "name": row[3] if len(row) > 3 else username,
+                    "apps": row[4] if len(row) > 4 else "all",
                 }
 
         return users if users else DEFAULT_USERS
@@ -60,10 +61,16 @@ def check_login():
                 users = get_users()
                 uname = username.strip().lower()
                 if uname in users and users[uname]["password"] == password:
-                    st.session_state["logged_in"] = True
-                    st.session_state["username"] = uname
-                    st.session_state["role"] = users[uname]["role"]
-                    st.rerun()
+                    # Check app access
+                    user_apps = users[uname].get("apps", "all").lower()
+                    allowed = user_apps == "all" or "gbpaudit" in user_apps
+                    if not allowed:
+                        st.error("You do not have access to this app. Contact your admin.")
+                    else:
+                        st.session_state["logged_in"] = True
+                        st.session_state["username"] = uname
+                        st.session_state["role"] = users[uname]["role"]
+                        st.rerun()
                 else:
                     st.error("Invalid username or password")
 
