@@ -48,7 +48,8 @@ def check_login():
     def login_form():
         st.markdown("""
         <div style="text-align:center; padding: 2rem 0;">
-            <h2 style="color: #03045E;">🦛 Fast Hippo Media</h2>
+            <img src="https://fasthippomedia.com/wp-content/uploads/2024/12/SVG-File.png" alt="FHM" style="height:60px; margin-bottom:8px;"><br>
+            <h2 style="color: #03045E;">Fast Hippo Media</h2>
             <p style="color: #666;">GBP Competitive Audit Tool</p>
         </div>
         """, unsafe_allow_html=True)
